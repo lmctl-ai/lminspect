@@ -47,6 +47,18 @@ rm -f "${CA_CERT}" "${CA_KEY}"
 openssl x509 -in "${CA_CERT}" -text -noout | grep "lminspect Root CA" >/dev/null
 echo "Certgen verified."
 
+wait_for_port() {
+  local p=$1
+  for i in {1..100}; do
+    if python3 -c "import socket; s = socket.create_connection(('127.0.0.1', int('$p')), timeout=0.1); s.close()" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  echo "Timeout waiting for port $p" >&2
+  return 1
+}
+
 echo "=== 6. Live E2E Integration: HTTP Proxy & DSL Addon ==="
 # Start upstream HTTP test server
 UPSTREAM_HTTP_PORT=19081
@@ -67,7 +79,7 @@ server.serve_forever()
 HTTP_PID=$!
 trap "kill -9 ${HTTP_PID} 2>/dev/null || true" EXIT
 
-sleep 0.5
+wait_for_port "${UPSTREAM_HTTP_PORT}"
 
 PROXY_HTTP_PORT=18081
 RECORD_FILE="${ROOT_DIR}/build/flows.jsonl"
@@ -80,7 +92,7 @@ rm -f "${RECORD_FILE}"
     --tap &
 PROXY_HTTP_PID=$!
 
-sleep 0.8
+wait_for_port "${PROXY_HTTP_PORT}"
 
 # Test 1: Forward HTTP traffic through proxy and verify DSL injected header
 HTTP_RES=$(curl -sSi -x "http://127.0.0.1:${PROXY_HTTP_PORT}" "http://127.0.0.1:${UPSTREAM_HTTP_PORT}/api/test")
@@ -120,7 +132,7 @@ httpd.serve_forever()
 HTTPS_PID=$!
 trap "kill -9 ${HTTPS_PID} 2>/dev/null || true" EXIT
 
-sleep 0.5
+wait_for_port "${UPSTREAM_HTTPS_PORT}"
 
 PROXY_HTTPS_PORT=18443
 "${ROOT_DIR}/bin/lminspect" run \
@@ -131,7 +143,7 @@ PROXY_HTTPS_PORT=18443
     --script "${ROOT_DIR}/build/add-header.dslb" &
 PROXY_HTTPS_PID=$!
 
-sleep 0.8
+wait_for_port "${PROXY_HTTPS_PORT}"
 
 # Test 2: Decrypt HTTPS traffic and verify injected header
 HTTPS_RES=$(curl -sSi -x "http://127.0.0.1:${PROXY_HTTPS_PORT}" --cacert "${CA_CERT}" "https://127.0.0.1:${UPSTREAM_HTTPS_PORT}/secure-endpoint")
@@ -164,7 +176,7 @@ server.serve_forever()
 REPLAY_PID=$!
 trap "kill -TERM ${REPLAY_PID} 2>/dev/null || true; wait ${REPLAY_PID} 2>/dev/null || true" EXIT
 
-sleep 0.5
+wait_for_port "${REPLAY_TARGET_PORT}"
 
 "${ROOT_DIR}/bin/lminspect" replay --client "${RECORD_FILE}" --target "127.0.0.1:${REPLAY_TARGET_PORT}"
 kill -TERM ${REPLAY_PID} 2>/dev/null || true
