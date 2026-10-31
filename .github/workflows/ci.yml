@@ -1,0 +1,162 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore: ["durable-memory/**", "**.md"]
+  pull_request:
+    paths-ignore: ["durable-memory/**", "**.md"]
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Run a single matrix job (or 'all')"
+        required: true
+        default: "all"
+        type: choice
+        options: [all, linux-x64, linux-arm64, macos-arm64, macos-x64]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04,     label: linux-x64 }
+          - { os: ubuntu-24.04-arm, label: linux-arm64 }
+          - { os: macos-15,         label: macos-arm64 }
+          - { os: macos-15-intel,   label: macos-x64 }
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.label }}
+    env:
+      ONLY_OK: ${{ github.event_name != 'workflow_dispatch' || inputs.only == 'all' || matrix.label == inputs.only }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.ONLY_OK == 'true'
+        with:
+          persist-credentials: false
+
+      - name: setup node.js (v24)
+        if: env.ONLY_OK == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: setup go (1.26)
+        if: env.ONLY_OK == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26'
+          cache: false
+
+      - name: install lmscript compiler
+        if: env.ONLY_OK == 'true'
+        run: npm install -g @lmctl-ai/lmctl@0.2.420
+
+      - name: build and test
+        if: env.ONLY_OK == 'true'
+        run: ./test.sh
+
+      - name: package artifact
+        if: env.ONLY_OK == 'true'
+        run: |
+          mkdir -p dist
+          cp bin/lminspect dist/lminspect-${{ matrix.label }}
+          cp LICENSE dist/
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: env.ONLY_OK == 'true'
+        with:
+          name: lminspect-${{ matrix.label }}
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # push to the dist branch
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: lminspect-*
+          path: ${{ runner.temp }}/bins
+          merge-multiple: true
+
+      - name: checksums
+        run: (cd "${{ runner.temp }}/bins" && sha256sum lminspect-* > SHA256SUMS)
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+
+      - name: update the dist branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch --depth=1 origin dist && git rev-parse -q --verify FETCH_HEAD; then
+            git checkout -B dist FETCH_HEAD
+          else
+            git checkout --orphan dist
+          fi
+          git rm -rf . >/dev/null 2>&1 || true
+          cp "${{ runner.temp }}/bins"/lminspect-* "${{ runner.temp }}/bins"/SHA256SUMS .
+          cp LICENSE . 2>/dev/null || true
+          git add -A
+          if git diff --cached --quiet; then
+            echo "dist branch already up to date"
+          else
+            git commit -m "dist: lminspect binaries from ${GITHUB_SHA}"
+          fi
+          git push --force-with-lease origin dist
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: lminspect-*
+          path: dist
+          merge-multiple: true
+
+      - name: tag matches lminspect --version
+        run: |
+          chmod +x dist/lminspect-linux-x64
+          got="$(dist/lminspect-linux-x64 --version)"
+          test "$got" = "lminspect ${GITHUB_REF_NAME#v}" || { echo "::error::tag $GITHUB_REF_NAME but binary says '$got'"; exit 1; }
+
+      - name: generate binary checksums
+        run: |
+          cd dist
+          find . -maxdepth 1 -type f -name 'lminspect-*' ! -name '*.sha256' -printf '%f\0' | sort -z | xargs -0 sha256sum > SHA256SUMS
+
+      - name: attach binaries to the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --clobber dist/*
+          else
+            gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes dist/*
+          fi

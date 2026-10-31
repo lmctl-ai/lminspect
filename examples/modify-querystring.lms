@@ -1,0 +1,33 @@
+# Mitmproxy example: Modify query string
+# Ported from mitmproxy/examples/addons/modify-querystring.py
+#
+# Usage:
+#   lmscript examples/modify-querystring.lms build/modify-querystring.dslb
+#   lminspect run --port 8080 --script build/modify-querystring.dslb
+
+p = _dsl_ cli="lminspect" install="github:lmctl-ai/lminspect@latest";
+
+# Standalone flow inspection & assertion
+let f = inspect.new_flow("GET", "https://search.example.com/items?category=books&limit=10");
+
+assert(f.request().query("category") == "books", "category query param mismatch");
+assert(f.request().query("limit") == "10", "limit query param mismatch");
+
+f.request().set_query("limit", "50");
+f.request().set_query("affiliate", "lmctl");
+
+assert(f.request().query("limit") == "50", "updated query param mismatch");
+assert(f.request().query("affiliate") == "lmctl", "injected query param mismatch");
+println("PASS: modify-querystring demonstration verified");
+
+# Addon hook for live proxy requests
+@request
+fn on_request(f: Flow) -> void implements RequestHook {
+    f.request().set_query("inspected_by", "lminspect");
+    if (f.request().query("debug") == "1") {
+        f.request().set_header("X-Debug-Mode", "enabled");
+    }
+}
+
+end _dsl_
+savedsl(p, ARGV[0]);

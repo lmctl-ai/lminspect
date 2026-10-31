@@ -1,0 +1,34 @@
+# Mitmproxy example: Filter and block unwanted flows
+# Ported from mitmproxy/examples/addons/filter-flows.py
+#
+# Usage:
+#   lmscript examples/filter-flows.lms build/filter-flows.dslb
+#   lminspect run --port 8080 --script build/filter-flows.dslb
+
+p = _dsl_ cli="lminspect" install="github:lmctl-ai/lminspect@latest";
+
+# Standalone flow inspection & assertion
+let f_blocked = inspect.new_flow("GET", "https://telemetry.analytics.internal/collect");
+if (str_contains(f_blocked.request().host(), "analytics")) {
+    f_blocked.kill();
+}
+assert(f_blocked.is_killed(), "analytics flow should be marked as killed");
+
+let f_allowed = inspect.new_flow("GET", "https://api.internal/v1/orders");
+if (str_contains(f_allowed.request().host(), "analytics")) {
+    f_allowed.kill();
+}
+assert(!f_allowed.is_killed(), "normal flow should not be killed");
+println("PASS: filter-flows demonstration verified");
+
+# Addon hook for live proxy requests
+@request
+fn on_request(f: Flow) -> void implements RequestHook {
+    if (str_contains(f.request().host(), "analytics") || str_contains(f.request().host(), "tracking")) {
+        println("[filter-flows] Blocked telemetry request to: " + f.request().host());
+        f.kill();
+    }
+}
+
+end _dsl_
+savedsl(p, ARGV[0]);

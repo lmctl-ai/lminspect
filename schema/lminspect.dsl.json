@@ -1,0 +1,404 @@
+{
+  "dsl.schema": 2,
+  "name": "lminspect",
+  "types": {
+    "Inspector": {
+      "methods": {
+        "new_flow": [
+          {
+            "params": [
+              "string",
+              "string"
+            ],
+            "returns": "Flow"
+          }
+        ],
+        "parse_flow": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "Flow"
+          }
+        ]
+      }
+    },
+    "Flow": {
+      "methods": {
+        "id": [
+          {
+            "params": [],
+            "returns": "string"
+          }
+        ],
+        "request": [
+          {
+            "params": [],
+            "returns": "Request"
+          }
+        ],
+        "response": [
+          {
+            "params": [],
+            "returns": "Response"
+          }
+        ],
+        "has_response": [
+          {
+            "params": [],
+            "returns": "bool"
+          }
+        ],
+        "error": [
+          {
+            "params": [],
+            "returns": "string"
+          }
+        ],
+        "intercept": [
+          {
+            "params": [],
+            "returns": "void"
+          }
+        ],
+        "is_intercepted": [
+          {
+            "params": [],
+            "returns": "bool"
+          }
+        ],
+        "resume": [
+          {
+            "params": [],
+            "returns": "void"
+          }
+        ],
+        "kill": [
+          {
+            "params": [],
+            "returns": "void"
+          }
+        ],
+        "is_killed": [
+          {
+            "params": [],
+            "returns": "bool"
+          }
+        ],
+        "respond": [
+          {
+            "params": [
+              "int",
+              "string",
+              "string"
+            ],
+            "returns": "void"
+          }
+        ],
+        "client_addr": [
+          {
+            "params": [],
+            "returns": "string"
+          }
+        ],
+        "duration_ms": [
+          {
+            "params": [],
+            "returns": "int"
+          }
+        ],
+        "to_json": [
+          {
+            "params": [],
+            "returns": "string"
+          }
+        ]
+      }
+    },
+    "Request": {
+      "methods": {
+        "method": [
+          {
+            "params": [],
+            "returns": "string"
+          }
+        ],
+        "set_method": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "void"
+          }
+        ],
+        "url": [
+          {
+            "params": [],
+            "returns": "string"
+          }
+        ],
+        "set_url": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "void"
+          }
+        ],
+        "scheme": [
+          {
+            "params": [],
+            "returns": "string"
+          }
+        ],
+        "set_scheme": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "void"
+          }
+        ],
+        "host": [
+          {
+            "params": [],
+            "returns": "string"
+          }
+        ],
+        "set_host": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "void"
+          }
+        ],
+        "port": [
+          {
+            "params": [],
+            "returns": "int"
+          }
+        ],
+        "set_port": [
+          {
+            "params": [
+              "int"
+            ],
+            "returns": "void"
+          }
+        ],
+        "path": [
+          {
+            "params": [],
+            "returns": "string"
+          }
+        ],
+        "set_path": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "void"
+          }
+        ],
+        "header": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "string"
+          }
+        ],
+        "set_header": [
+          {
+            "params": [
+              "string",
+              "string"
+            ],
+            "returns": "void"
+          }
+        ],
+        "remove_header": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "void"
+          }
+        ],
+        "header_names": [
+          {
+            "params": [],
+            "returns": "StrList"
+          }
+        ],
+        "text": [
+          {
+            "params": [],
+            "returns": "string"
+          }
+        ],
+        "set_text": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "void"
+          }
+        ],
+        "query": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "string"
+          }
+        ],
+        "set_query": [
+          {
+            "params": [
+              "string",
+              "string"
+            ],
+            "returns": "void"
+          }
+        ],
+        "query_names": [
+          {
+            "params": [],
+            "returns": "StrList"
+          }
+        ]
+      }
+    },
+    "Response": {
+      "methods": {
+        "status_code": [
+          {
+            "params": [],
+            "returns": "int"
+          }
+        ],
+        "set_status_code": [
+          {
+            "params": [
+              "int"
+            ],
+            "returns": "void"
+          }
+        ],
+        "reason": [
+          {
+            "params": [],
+            "returns": "string"
+          }
+        ],
+        "set_reason": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "void"
+          }
+        ],
+        "header": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "string"
+          }
+        ],
+        "set_header": [
+          {
+            "params": [
+              "string",
+              "string"
+            ],
+            "returns": "void"
+          }
+        ],
+        "remove_header": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "void"
+          }
+        ],
+        "header_names": [
+          {
+            "params": [],
+            "returns": "StrList"
+          }
+        ],
+        "text": [
+          {
+            "params": [],
+            "returns": "string"
+          }
+        ],
+        "set_text": [
+          {
+            "params": [
+              "string"
+            ],
+            "returns": "void"
+          }
+        ]
+      }
+    }
+  },
+  "context": {
+    "inspect": "Inspector",
+    "flow": "Flow"
+  },
+  "interfaces": {
+    "RequestHook": {
+      "params": [
+        {
+          "name": "flow",
+          "type": "Flow"
+        }
+      ],
+      "returns": "void"
+    },
+    "ResponseHook": {
+      "params": [
+        {
+          "name": "flow",
+          "type": "Flow"
+        }
+      ],
+      "returns": "void"
+    },
+    "FlowHook": {
+      "params": [
+        {
+          "name": "flow",
+          "type": "Flow"
+        }
+      ],
+      "returns": "void"
+    }
+  },
+  "functions": {
+    "assert": [
+      {
+        "params": [
+          "bool",
+          "string"
+        ],
+        "returns": "void"
+      }
+    ],
+    "println": [
+      {
+        "params": [
+          "string"
+        ],
+        "returns": "void"
+      }
+    ]
+  }
+}

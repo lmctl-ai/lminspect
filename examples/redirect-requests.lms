@@ -1,0 +1,39 @@
+# Mitmproxy example: Redirect requests to another host or path
+# Ported from mitmproxy/examples/addons/redirect-requests.py
+#
+# Usage:
+#   lmscript examples/redirect-requests.lms build/redirect-requests.dslb
+#   lminspect run --port 8080 --script build/redirect-requests.dslb
+
+p = _dsl_ cli="lminspect" install="github:lmctl-ai/lminspect@latest";
+
+# Standalone flow inspection & assertion
+let f = inspect.new_flow("GET", "http://old-internal.service:8080/legacy/status");
+assert(f.request().host() == "old-internal.service", "initial host mismatch");
+
+if (f.request().host() == "old-internal.service") {
+    f.request().set_host("new-internal.service");
+    f.request().set_port(9000);
+}
+if (f.request().path() == "/legacy/status") {
+    f.request().set_path("/api/v2/status");
+}
+
+assert(f.request().host() == "new-internal.service", "redirected host mismatch");
+assert(f.request().port() == 9000, "redirected port mismatch");
+assert(f.request().path() == "/api/v2/status", "redirected path mismatch");
+println("PASS: redirect-requests demonstration verified");
+
+# Addon hook for live proxy requests
+@request
+fn on_request(f: Flow) -> void implements RequestHook {
+    if (f.request().host() == "example.com") {
+        f.request().set_host("mitmproxy.org");
+    }
+    if (str_starts_with(f.request().path(), "/old/")) {
+        f.request().set_path(str_replace(f.request().path(), "/old/", "/new/"));
+    }
+}
+
+end _dsl_
+savedsl(p, ARGV[0]);

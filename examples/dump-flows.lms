@@ -1,0 +1,33 @@
+# Mitmproxy example: Dump flow details to console
+# Ported from mitmproxy/examples/addons/dump.py
+#
+# Usage:
+#   lmscript examples/dump-flows.lms build/dump-flows.dslb
+#   lminspect run --port 8080 --script build/dump-flows.dslb
+
+p = _dsl_ cli="lminspect" install="github:lmctl-ai/lminspect@latest";
+
+# Standalone flow inspection & assertion
+let f = inspect.new_flow("POST", "https://api.github.com/graphql");
+f.request().set_header("Content-Type", "application/json");
+f.request().set_text("{\"query\": \"{ viewer { login } }\"}");
+f.respond(200, "{\"data\": {\"viewer\": {\"login\": \"mike-lmctl\"}}}", "application/json");
+
+let json_str = f.to_json();
+assert(str_contains(json_str, "graphql"), "json dump should contain path");
+assert(str_contains(f.response().text(), "mike-lmctl"), "response text should match");
+println("PASS: dump-flows demonstration verified");
+
+# Addon hooks for live proxy logging
+@request
+fn on_request(f: Flow) -> void implements RequestHook {
+    println("[>> REQ] " + f.request().method() + " " + f.request().url());
+}
+
+@response
+fn on_response(f: Flow) -> void implements ResponseHook {
+    println("[<< RES] " + str(f.response().status_code()) + " " + f.request().url() + " (" + str(f.duration_ms()) + "ms)");
+}
+
+end _dsl_
+savedsl(p, ARGV[0]);

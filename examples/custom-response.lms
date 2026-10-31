@@ -1,0 +1,34 @@
+# Mitmproxy example: Send custom synthetic response
+# Ported from mitmproxy/examples/addons/custom-response.py
+#
+# Usage:
+#   lmscript examples/custom-response.lms build/custom-response.dslb
+#   lminspect run --port 8080 --script build/custom-response.dslb
+
+p = _dsl_ cli="lminspect" install="github:lmctl-ai/lminspect@latest";
+
+# Standalone flow inspection & assertion
+let f = inspect.new_flow("GET", "https://api.internal/mock/user/42");
+if (str_starts_with(f.request().path(), "/mock/")) {
+    f.respond(200, "{\"id\": 42, \"name\": \"Antigravity Tester\", \"status\": \"active\"}", "application/json");
+}
+
+assert(f.has_response(), "flow should have synthetic response");
+assert(f.response().status_code() == 200, "status code mismatch");
+assert(f.response().header("content-type") == "application/json", "content type mismatch");
+assert(str_contains(f.response().text(), "Antigravity Tester"), "response body mismatch");
+println("PASS: custom-response demonstration verified");
+
+# Addon hook for live proxy requests
+@request
+fn on_request(f: Flow) -> void implements RequestHook {
+    if (f.request().path() == "/healthz") {
+        f.respond(200, "{\"status\": \"healthy\", \"engine\": \"lminspect\"}", "application/json");
+    }
+    if (str_starts_with(f.request().path(), "/mock/")) {
+        f.respond(200, "{\"mocked\": true, \"path\": \"" + f.request().path() + "\"}", "application/json");
+    }
+}
+
+end _dsl_
+savedsl(p, ARGV[0]);

@@ -1,0 +1,43 @@
+# Mitmproxy example: Replay and mutate recorded flow
+# Ported from mitmproxy/examples/addons/replay.py
+#
+# Usage:
+#   lmscript examples/replay-flow.lms build/replay-flow.dslb
+#   lminspect run --port 8080 --script build/replay-flow.dslb
+
+p = _dsl_ cli="lminspect" install="github:lmctl-ai/lminspect@latest";
+
+# Standalone flow inspection & assertion:
+# 1. Create original flow and serialize to JSON
+let orig = inspect.new_flow("POST", "https://api.gateway.internal/orders");
+orig.request().set_header("Content-Type", "application/json");
+orig.request().set_header("Idempotency-Key", "idemp-001");
+orig.request().set_text("{\"sku\": \"A-100\", \"qty\": 2}");
+orig.respond(200, "{\"order_id\": \"ORD-999\", \"status\": \"placed\"}", "application/json");
+
+let recorded_json = orig.to_json();
+
+# 2. Replay & parse flow from serialized representation
+let replayed = inspect.parse_flow(recorded_json);
+assert(replayed.request().method() == "POST", "replayed method mismatch");
+assert(replayed.request().header("idempotency-key") == "idemp-001", "replayed header mismatch");
+assert(replayed.response().status_code() == 200, "replayed status code mismatch");
+
+# 3. Mutate replayed flow for subsequent retry
+replayed.request().set_header("Idempotency-Key", "idemp-002");
+replayed.request().set_text("{\"sku\": \"A-100\", \"qty\": 3}");
+
+assert(replayed.request().header("idempotency-key") == "idemp-002", "mutated header mismatch");
+println("PASS: replay-flow demonstration verified");
+
+# Addon hook for live proxy requests
+@request
+fn on_request(f: Flow) -> void implements RequestHook {
+    if (f.request().header("x-replay") == "true") {
+        println("[replay] Replaying synthetic flow for: " + f.request().url());
+        f.respond(200, "{\"replayed\": true, \"flow\": \"" + f.id() + "\"}", "application/json");
+    }
+}
+
+end _dsl_
+savedsl(p, ARGV[0]);

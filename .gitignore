@@ -1,0 +1,14 @@
+# Binaries and build artifacts
+bin/
+build/
+dist/
+
+# Test output and certificates
+*.crt
+*.key
+*.jsonl
+*.dslb
+
+# OS files
+.DS_Store
+Thumbs.db
