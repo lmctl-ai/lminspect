@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strings"
 	"sync"
 )
 
@@ -281,7 +282,15 @@ func (r *RuleAddon) OnRequest(flow *HTTPFlow) error {
 			return nil
 
 		case RuleRoute:
-			h, p, err := parseHostPort(rule.Target)
+			target := rule.Target
+			if strings.HasPrefix(target, "http://") {
+				flow.Request.Scheme = "http"
+				target = strings.TrimPrefix(target, "http://")
+			} else if strings.HasPrefix(target, "https://") {
+				flow.Request.Scheme = "https"
+				target = strings.TrimPrefix(target, "https://")
+			}
+			h, p, err := parseHostPort(target)
 			if err == nil {
 				flow.Request.Host = h
 				if p > 0 {
