@@ -15,8 +15,8 @@ go test -v ./...
 
 echo "=== 3. Testing CLI Standard Flags ==="
 "${ROOT_DIR}/bin/lminspect" --version
-"${ROOT_DIR}/bin/lminspect" --dsl-signatures | grep -q "method Flow.respond"
-"${ROOT_DIR}/bin/lminspect" --dsl-schema | grep -q '"name": "lminspect"'
+"${ROOT_DIR}/bin/lminspect" --dsl-signatures | grep "method Flow.respond" >/dev/null
+"${ROOT_DIR}/bin/lminspect" --dsl-schema | grep '"name": "lminspect"' >/dev/null
 echo "CLI flag tests passed."
 
 echo "=== 4. Compiling Ported Mitmproxy Examples (lmscript -> dslb) ==="
@@ -44,7 +44,7 @@ CA_CERT="${ROOT_DIR}/build/ca.crt"
 CA_KEY="${ROOT_DIR}/build/ca.key"
 rm -f "${CA_CERT}" "${CA_KEY}"
 "${ROOT_DIR}/bin/lminspect" certgen --cert "${CA_CERT}" --key "${CA_KEY}"
-openssl x509 -in "${CA_CERT}" -text -noout | grep -q "lminspect Root CA"
+openssl x509 -in "${CA_CERT}" -text -noout | grep "lminspect Root CA" >/dev/null
 echo "Certgen verified."
 
 echo "=== 6. Live E2E Integration: HTTP Proxy & DSL Addon ==="
@@ -84,8 +84,8 @@ sleep 0.8
 
 # Test 1: Forward HTTP traffic through proxy and verify DSL injected header
 HTTP_RES=$(curl -sSi -x "http://127.0.0.1:${PROXY_HTTP_PORT}" "http://127.0.0.1:${UPSTREAM_HTTP_PORT}/api/test")
-echo "${HTTP_RES}" | grep -q "HELLO_HTTP_UPSTREAM"
-echo "${HTTP_RES}" | grep -qi "X-Powered-By: lminspect"
+echo "${HTTP_RES}" | grep "HELLO_HTTP_UPSTREAM" >/dev/null
+echo "${HTTP_RES}" | grep -i "X-Powered-By: lminspect" >/dev/null
 echo "HTTP forward proxy with DSL addon verified."
 
 kill -TERM ${PROXY_HTTP_PID} 2>/dev/null || true
@@ -135,8 +135,8 @@ sleep 0.8
 
 # Test 2: Decrypt HTTPS traffic and verify injected header
 HTTPS_RES=$(curl -sSi -x "http://127.0.0.1:${PROXY_HTTPS_PORT}" --cacert "${CA_CERT}" "https://127.0.0.1:${UPSTREAM_HTTPS_PORT}/secure-endpoint")
-echo "${HTTPS_RES}" | grep -q "HELLO_HTTPS_SECURE"
-echo "${HTTPS_RES}" | grep -qi "X-Powered-By: lminspect"
+echo "${HTTPS_RES}" | grep "HELLO_HTTPS_SECURE" >/dev/null
+echo "${HTTPS_RES}" | grep -i "X-Powered-By: lminspect" >/dev/null
 echo "HTTPS SSL-Bump MITM with DSL addon verified."
 
 kill -TERM ${PROXY_HTTPS_PID} 2>/dev/null || true
