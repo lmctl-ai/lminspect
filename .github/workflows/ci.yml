@@ -61,7 +61,7 @@ jobs:
 
       - name: install lmscript compiler
         if: env.ONLY_OK == 'true'
-        run: npm install -g @lmctl-ai/lmctl@0.2.420
+        run: npm install -g @lmctl-ai/lmctl
 
       - name: build and test
         if: env.ONLY_OK == 'true'
