@@ -19,3 +19,9 @@ Welcome to the internal engineering documentation and architecture record for **
    - Structural comparison between Python mitmproxy and Go lminspect.
    - Event mapping (`request`, `response`, `error`).
    - Detailed mapping of all 8 ported example scripts.
+
+4. [Case Study: Reverse-Engineering GitHub Copilot CLI](file:///home/ubuntu/repos/lmctl-ai/lminspect/durable-memory/04-copilot-case-study.md)
+   - Step-by-step workflow for intercepting and inspecting `@github/copilot` live traffic.
+   - Full protocol analysis: OpenAI Responses streaming, Anthropic Messages, and Model catalog discovery.
+   - Core engine enhancement: `RuleRoute` scheme rewriting for TLS offloading to local mock servers.
+   - GitHub Actions CI implementation patterns.
