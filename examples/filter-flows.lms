@@ -5,7 +5,7 @@
 #   lmscript examples/filter-flows.lms build/filter-flows.dslb
 #   lminspect run --port 8080 --script build/filter-flows.dslb
 
-p = _dsl_ cli="lminspect" install="github:lmctl-ai/lminspect@latest";
+p = _dsl_ cli="lminspect";
 
 # Standalone flow inspection & assertion
 let f_blocked = inspect.new_flow("GET", "https://telemetry.analytics.internal/collect");

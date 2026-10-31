@@ -101,7 +101,7 @@ lminspect replay --client flows.jsonl --target 127.0.0.1:9000
 ### Example Addon (`add-header.lms`)
 
 ```lmcode
-p = _dsl_ cli="lminspect" install="github:lmctl-ai/lminspect@latest";
+p = _dsl_ cli="lminspect";
 
 # Request hook: executes before forwarding upstream
 @request

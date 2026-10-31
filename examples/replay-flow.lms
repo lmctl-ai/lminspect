@@ -5,7 +5,7 @@
 #   lmscript examples/replay-flow.lms build/replay-flow.dslb
 #   lminspect run --port 8080 --script build/replay-flow.dslb
 
-p = _dsl_ cli="lminspect" install="github:lmctl-ai/lminspect@latest";
+p = _dsl_ cli="lminspect";
 
 # Standalone flow inspection & assertion:
 # 1. Create original flow and serialize to JSON

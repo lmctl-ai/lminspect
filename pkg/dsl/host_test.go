@@ -27,7 +27,7 @@ func TestDslHostDirectFlowExecution(t *testing.T) {
 	}
 
 	lmsSource := `
-p = _dsl_ cli="lminspect" install="github:lmctl-ai/lminspect@latest";
+p = _lmcode_ schema="` + schemaFile + `";
 
 let f = inspect.new_flow("POST", "https://api.internal:8443/v1/resource?action=create");
 assert(f.request().method() == "POST", "method mismatch");
@@ -45,7 +45,7 @@ assert(f.response().status_code() == 201, "status code mismatch");
 assert(f.response().text() == "{\"created\": true}", "response text mismatch");
 assert(f.response().header("content-type") == "application/json", "content type mismatch");
 
-end _dsl_
+end _lmcode_
 savedsl(p, "` + filepath.Join(tempDir, "test.dslb") + `");
 `
 	lmsFile := filepath.Join(tempDir, "test.lms")
@@ -90,13 +90,17 @@ func TestDslAddonHooks(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
+	schemaFile := filepath.Join(tempDir, "lminspect.dsl.json")
 	schemaBytes, err := os.ReadFile("../../schema/lminspect.dsl.json")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(schemaFile, schemaBytes, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	lmsSource := `
-p = _dsl_ cli="lminspect" install="github:lmctl-ai/lminspect@latest";
+p = _lmcode_ schema="` + schemaFile + `";
 
 @request
 fn on_request(f: Flow) -> void implements RequestHook {
@@ -114,7 +118,7 @@ fn on_response(f: Flow) -> void implements ResponseHook {
 	}
 }
 
-end _dsl_
+end _lmcode_
 savedsl(p, "` + filepath.Join(tempDir, "hooks.dslb") + `");
 `
 	lmsFile := filepath.Join(tempDir, "hooks.lms")

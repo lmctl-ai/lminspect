@@ -4,15 +4,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${ROOT_DIR}"
 
-echo "=== 1. Running Go Unit Tests ==="
+echo "=== 1. Building lminspect Static Binary ==="
 export CGO_ENABLED=0
-export PATH="${ROOT_DIR}/bin:${PATH}"
-
-go test -v ./...
-
-echo "=== 2. Building lminspect Static Binary ==="
 mkdir -p "${ROOT_DIR}/bin" "${ROOT_DIR}/build"
 go build -trimpath -ldflags="-s -w" -o "${ROOT_DIR}/bin/lminspect" main.go
+export PATH="${ROOT_DIR}/bin:${PATH}"
+
+echo "=== 2. Running Go Unit Tests ==="
+go test -v ./...
 
 echo "=== 3. Testing CLI Standard Flags ==="
 "${ROOT_DIR}/bin/lminspect" --version
