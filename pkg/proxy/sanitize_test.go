@@ -436,3 +436,18 @@ func TestCredentialKnownValueInQueryName(t *testing.T) {
 	}
 	inspectCapture(t, out, key)
 }
+
+func TestCredentialSignedAndSessionQueryFields(t *testing.T) {
+	for _, name := range []string{"sig", "signature", "X-Amz-Signature", "csrf", "xsrf", "sid"} {
+		t.Run(name, func(t *testing.T) {
+			key := syntheticKey(t)
+			f := NewFlow(&Request{Method: "GET", Path: "/capture?" + name + "=" + url.QueryEscape(key), Headers: map[string][]string{}}, "")
+			f.Response = MakeResponse(200, "echo "+key, "text/plain")
+			out, e := f.ToJSON()
+			if e != nil {
+				t.Fatal(e)
+			}
+			inspectCapture(t, out, key)
+		})
+	}
+}

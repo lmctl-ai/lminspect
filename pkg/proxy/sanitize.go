@@ -56,7 +56,7 @@ func credentialField(s string) bool {
 	}
 	k := fieldName(s)
 	compact := strings.ReplaceAll(k, "-", "")
-	return k == "key" || strings.HasSuffix(compact, "apikey") || k == "auth" || k == "x-auth" || k == "session-key" || k == "signing-key" || k == "token" || strings.HasSuffix(k, "-token") || strings.HasSuffix(k, "-api-key") || strings.Contains(k, "password") || strings.Contains(k, "passwd") || k == "pwd" || strings.Contains(k, "secret") || strings.Contains(k, "private-key") || strings.Contains(k, "access-key") || strings.Contains(k, "credential") || k == "authorization" || k == "proxy-authorization" || k == "authentication" || k == "cookie" || k == "set-cookie"
+	return k == "sig" || k == "signature" || strings.HasSuffix(k, "-signature") || k == "csrf" || strings.HasSuffix(k, "-csrf") || k == "xsrf" || strings.HasSuffix(k, "-xsrf") || k == "sid" || k == "key" || strings.HasSuffix(compact, "apikey") || k == "auth" || k == "x-auth" || k == "session-key" || k == "signing-key" || k == "token" || strings.HasSuffix(k, "-token") || strings.HasSuffix(k, "-api-key") || strings.Contains(k, "password") || strings.Contains(k, "passwd") || k == "pwd" || strings.Contains(k, "secret") || strings.Contains(k, "private-key") || strings.Contains(k, "access-key") || strings.Contains(k, "credential") || k == "authorization" || k == "proxy-authorization" || k == "authentication" || k == "cookie" || k == "set-cookie"
 }
 func authLike(s string) bool {
 	k := fieldName(s)
