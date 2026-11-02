@@ -215,14 +215,16 @@ a copy; authenticated upstream requests and client responses retain their wire
 content. Raw payloads are buffered in memory, never spooled to a capture file.
 
 Known credential fields are denied in both directions: Authorization/Basic/Bearer,
-proxy authorization, API keys, access/refresh tokens, passwords, secrets, cookies,
+proxy authorization, API keys, access/refresh tokens, signatures, CSRF/session values, passwords, secrets, cookies,
 URL userinfo and query parameters (including encoded names/values). Auth-like
 custom fields with high-entropy values and common vendor token patterns are also
 scrubbed. Credential-like environment variables seed discovery so otherwise
 unlabelled echoes of keys supplied to the proxy are removed too. Discovery covers
 both directions before writing, remembers previously observed credentials in RAM
 for the recorder/proxy lifetime, and covers percent/base64/JSON encodings and
-credentials split across SSE data events. Ordinary fields such as tokenizer,
+credentials split across SSE data events. URL-encoded and multipart forms
+(including base64/quoted-printable part transfers), JSON streams and escaped JSON
+text are inspected before export. Ordinary fields such as tokenizer,
 usage counts and booleans remain useful for fixtures.
 
 The stable replacement is `<redacted:credential>`, matching lmmock's importer.

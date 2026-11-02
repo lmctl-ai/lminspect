@@ -9,8 +9,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
+	"mime/quotedprintable"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -448,6 +453,125 @@ func TestCredentialSignedAndSessionQueryFields(t *testing.T) {
 				t.Fatal(e)
 			}
 			inspectCapture(t, out, key)
+		})
+	}
+}
+
+func TestCredentialOpaqueBearerDoesNotBecomeBasicOrCookie(t *testing.T) {
+	opaque := syntheticKey(t) + "x:m"
+	key := base64.StdEncoding.EncodeToString([]byte(opaque))
+	ct := "text/event-stream; charset=utf-8"
+	f := NewFlow(&Request{Method: "GET", Path: "/", Headers: map[string][]string{"Authorization": {"Bearer " + key}}}, "")
+	f.Response = MakeResponse(200, "event: text\ndata: {\"text\":\"ordinary message\"}\n\ndata: [DONE]\n\n", ct)
+	out, e := f.ToJSON()
+	if e != nil {
+		t.Fatal(e)
+	}
+	g := inspectCapture(t, out, key)
+	if g.Response.Header("Content-Type") != ct || strings.Count(string(g.Response.Content), "\n\n") != 2 {
+		t.Fatal("opaque Bearer token corrupted protocol metadata")
+	}
+}
+
+func TestCredentialMultipartForms(t *testing.T) {
+	for _, transfer := range []string{"plain", "base64", "quoted-printable"} {
+		t.Run(transfer, func(t *testing.T) {
+			key := syntheticKey(t) + "=part"
+			var wire bytes.Buffer
+			writer := multipart.NewWriter(&wire)
+			if writer.SetBoundary("synthetic-boundary") != nil {
+				t.Fatal("boundary fixture failed")
+			}
+			header := textproto.MIMEHeader{"Content-Disposition": {`form-data; name="api_key"`}}
+			if transfer != "plain" {
+				header.Set("Content-Transfer-Encoding", transfer)
+			}
+			part, e := writer.CreatePart(header)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if transfer == "base64" {
+				io.WriteString(part, base64.StdEncoding.EncodeToString([]byte(key)))
+			} else if transfer == "quoted-printable" {
+				q := quotedprintable.NewWriter(part)
+				io.WriteString(q, key)
+				q.Close()
+			} else {
+				io.WriteString(part, key)
+			}
+			writer.WriteField("tokenizer", "keep")
+			writer.Close()
+			f := NewFlow(&Request{Method: "POST", Path: "/capture", Headers: map[string][]string{}, Content: []byte(`{"echo":"` + key + `"}`)}, "")
+			f.Response = MakeResponse(200, wire.String(), writer.FormDataContentType())
+			out, e := f.ToJSON()
+			if e != nil {
+				t.Fatal(e)
+			}
+			clean := inspectCapture(t, out, key)
+			_, params, e := mime.ParseMediaType(clean.Response.Header("Content-Type"))
+			if e != nil {
+				t.Fatal("multipart media type lost")
+			}
+			again, e := clean.ToJSON()
+			if e != nil || !bytes.Equal(out, again) {
+				t.Fatal("multipart re-export is not stable")
+			}
+			reader := multipart.NewReader(bytes.NewReader(clean.Response.Content), params["boundary"])
+			seen := map[string]string{}
+			for {
+				p, e := reader.NextPart()
+				if e == io.EOF {
+					break
+				}
+				if e != nil {
+					t.Fatal("multipart structure lost")
+				}
+				b, e := io.ReadAll(p)
+				if e != nil {
+					t.Fatal(e)
+				}
+				seen[p.FormName()] = string(b)
+			}
+			if seen["api_key"] != RedactedCredential || seen["tokenizer"] != "keep" {
+				t.Fatal("multipart fields not preserved and sanitized")
+			}
+		})
+	}
+}
+func TestCredentialEscapedTextAndJSONStream(t *testing.T) {
+	for _, kind := range []string{"escaped-text", "ndjson"} {
+		t.Run(kind, func(t *testing.T) {
+			key := syntheticKey(t)
+			escaped := strings.Replace(key, "-", `\u002d`, 1)
+			var content []byte
+			ct := "application/json"
+			if kind == "escaped-text" {
+				content, _ = json.Marshal(map[string]string{"echo": escaped})
+			} else {
+				ct = "application/x-ndjson"
+				content = []byte(`{"api_key":"` + escaped + `"}` + "\n" + `{"echo":"` + key + `"}` + "\n")
+			}
+			req := &Request{Method: "GET", Path: "/", Headers: map[string][]string{}}
+			if kind == "escaped-text" {
+				req.Headers["Authorization"] = []string{"Bearer " + key}
+			}
+			f := NewFlow(req, "")
+			f.Response = MakeResponse(200, string(content), ct)
+			out, e := f.ToJSON()
+			if e != nil {
+				t.Fatal(e)
+			}
+			clean := inspectCapture(t, out, key)
+			if kind == "escaped-text" {
+				var tree map[string]string
+				if json.Unmarshal(clean.Response.Content, &tree) != nil {
+					t.Fatal("JSON shape lost")
+				}
+				var decoded string
+				if json.Unmarshal([]byte(`"`+tree["echo"]+`"`), &decoded) == nil && decoded == key {
+					t.Fatal("escaped credential persisted")
+				}
+			}
 		})
 	}
 }

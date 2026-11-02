@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"io"
 	"math"
+	"mime"
+	"mime/multipart"
+	"mime/quotedprintable"
 	"net/url"
 	"os"
 	"regexp"
@@ -110,6 +113,9 @@ func (n *outputSanitizer) add(s string) {
 }
 func (n *outputSanitizer) learnValue(v string) {
 	n.add(v)
+	if decoded, ok := unescapeText(v); ok {
+		n.learnValue(decoded)
+	}
 	if scheme, rest, ok := strings.Cut(v, " "); ok && (strings.EqualFold(scheme, "Bearer") || strings.EqualFold(scheme, "Basic")) {
 		n.add(strings.TrimSpace(rest))
 	}
@@ -126,6 +132,9 @@ func (n *outputSanitizer) learnValue(v string) {
 	}
 	for _, m := range bearerPattern.FindAllStringSubmatch(v, -1) {
 		n.add(m[1])
+		if !strings.EqualFold(strings.Fields(m[0])[0], "Basic") {
+			continue
+		}
 		for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
 			if b, e := enc.DecodeString(m[1]); e == nil {
 				n.add(string(b))
@@ -136,9 +145,21 @@ func (n *outputSanitizer) learnValue(v string) {
 			}
 		}
 	}
-	for _, p := range strings.Split(v, ";") {
-		if _, value, ok := strings.Cut(p, "="); ok {
-			n.add(strings.TrimSpace(value))
+}
+
+func (n *outputSanitizer) learnField(name, value string) {
+	n.learnValue(value)
+	kind := fieldName(name)
+	if kind != "cookie" && kind != "set-cookie" {
+		return
+	}
+	pairs := strings.Split(value, ";")
+	if kind == "set-cookie" {
+		pairs = pairs[:1]
+	}
+	for _, pair := range pairs {
+		if _, v, ok := strings.Cut(pair, "="); ok {
+			n.learnValue(strings.Trim(strings.TrimSpace(v), `"`))
 		}
 	}
 }
@@ -146,6 +167,9 @@ func (n *outputSanitizer) variants() []string {
 	all := map[string]bool{}
 	for s := range n.secrets {
 		all[s] = true
+		if b, e := json.Marshal(s); e == nil {
+			all[string(b[1:len(b)-1])] = true
+		}
 		all[url.QueryEscape(s)] = true
 		all[url.PathEscape(s)] = true
 		var upper, lower, unicodeEsc strings.Builder
@@ -218,7 +242,28 @@ func replaceOutsideMarkers(s, secret string) string {
 	out.WriteString(strings.ReplaceAll(s[at:], secret, RedactedCredential))
 	return out.String()
 }
+func unescapeText(s string) (string, bool) {
+	if !strings.Contains(s, `\`) {
+		return "", false
+	}
+	var decoded string
+	err := json.Unmarshal([]byte(`"`+s+`"`), &decoded)
+	return decoded, err == nil && decoded != s && len(decoded) < len(s)
+}
 func (n *outputSanitizer) discoverText(s string) {
+	if decoded, ok := unescapeText(s); ok {
+		n.discoverText(decoded)
+	}
+	// Decode JSON sequences too (NDJSON), before scrubbing any earlier echo.
+	decoder := json.NewDecoder(strings.NewReader(s))
+	decoder.UseNumber()
+	for {
+		var v any
+		if decoder.Decode(&v) != nil {
+			break
+		}
+		n.discoverTree(v, false)
+	}
 	if decoded, e := url.QueryUnescape(s); e == nil && decoded != s {
 		n.discoverText(decoded)
 	}
@@ -248,7 +293,7 @@ func (n *outputSanitizer) discoverText(s string) {
 		}
 		key, _ := url.QueryUnescape(m[1])
 		if sensitiveValue(key, v) {
-			n.learnValue(v)
+			n.learnField(key, v)
 		}
 	}
 }
@@ -276,12 +321,21 @@ func (n *outputSanitizer) discoverTree(v any, named bool) {
 	case map[string]any:
 		for k, v := range x {
 			sv, _ := v.(string)
+			if fieldName(k) == "cookie" || fieldName(k) == "set-cookie" {
+				n.learnField(k, sv)
+			}
 			n.discoverTree(v, named || sensitiveValue(k, sv))
 		}
 	}
 }
 func (n *outputSanitizer) text(s string) string {
 	n.discoverText(s)
+	if decoded, ok := unescapeText(s); ok {
+		if clean := n.text(decoded); clean != decoded {
+			encoded, _ := json.Marshal(clean)
+			s = string(encoded[1 : len(encoded)-1])
+		}
+	}
 	for _, v := range n.variants() {
 		s = replaceOutsideMarkers(s, v)
 	}
@@ -330,7 +384,7 @@ func (n *outputSanitizer) cleanURL(s string) string {
 			for i, v := range vs {
 				clean := v
 				if sensitiveValue(k, v) {
-					n.learnValue(v)
+					n.learnField(k, v)
 					clean = RedactedCredential
 				} else {
 					clean = n.text(v)
@@ -552,6 +606,9 @@ func (n *outputSanitizer) body(b []byte, h map[string][]string) []byte {
 		return []byte(RedactedCredential)
 	}
 	ct := strings.ToLower(getHeader(h, "Content-Type"))
+	if strings.HasPrefix(ct, "multipart/") {
+		return n.multipartBody(b, h)
+	}
 	if strings.Contains(ct, "text/event-stream") {
 		parts := parseSSE(b)
 		var refs []textRef
@@ -590,7 +647,7 @@ func (n *outputSanitizer) body(b []byte, h map[string][]string) []byte {
 		for k, vs := range q {
 			for _, v := range vs {
 				if sensitiveValue(k, v) {
-					n.learnValue(v)
+					n.learnField(k, v)
 				}
 			}
 		}
@@ -606,6 +663,100 @@ func (n *outputSanitizer) body(b []byte, h map[string][]string) []byte {
 		return []byte(q.Encode())
 	}
 	return []byte(n.text(string(b)))
+}
+
+type multipartOutputPart struct {
+	headers map[string][]string
+	body    []byte
+	name    string
+}
+
+func (n *outputSanitizer) multipartBody(b []byte, headers map[string][]string) []byte {
+	_, params, e := mime.ParseMediaType(getHeader(headers, "Content-Type"))
+	if e != nil || params["boundary"] == "" {
+		return []byte(RedactedCredential)
+	}
+	reader := multipart.NewReader(bytes.NewReader(b), params["boundary"])
+	var parts []multipartOutputPart
+	for {
+		part, e := reader.NextRawPart()
+		if e == io.EOF {
+			break
+		}
+		if e != nil {
+			return []byte(RedactedCredential)
+		}
+		data, e := io.ReadAll(part)
+		part.Close()
+		if e != nil {
+			return []byte(RedactedCredential)
+		}
+		h := cloneHeaders(part.Header)
+		switch strings.ToLower(strings.TrimSpace(getHeader(h, "Content-Transfer-Encoding"))) {
+		case "base64":
+			data, e = base64.StdEncoding.DecodeString(strings.Join(strings.Fields(string(data)), ""))
+		case "quoted-printable":
+			data, e = io.ReadAll(quotedprintable.NewReader(bytes.NewReader(data)))
+		case "", "binary", "7bit", "8bit":
+		default:
+			e = io.ErrUnexpectedEOF
+		}
+		deleteHeader(h, "Content-Transfer-Encoding")
+		if e != nil {
+			data = []byte(RedactedCredential)
+		}
+		data = decodeContent(data, h)
+		name := part.FormName()
+		if sensitiveValue(name, string(data)) {
+			n.learnField(name, string(data))
+		}
+		parts = append(parts, multipartOutputPart{h, data, name})
+	}
+	// Learn every part before serializing any part, including echoes before a key.
+	for _, p := range parts {
+		for k, vs := range p.headers {
+			for _, v := range vs {
+				if sensitiveValue(k, v) {
+					n.learnField(k, v)
+				}
+				n.discoverText(v)
+			}
+		}
+		_ = n.body(p.body, p.headers)
+	}
+	var buffer bytes.Buffer
+	writer := multipart.NewWriter(&buffer)
+	if writer.SetBoundary(params["boundary"]) != nil {
+		return []byte(RedactedCredential)
+	}
+	for _, p := range parts {
+		clean := n.body(p.body, p.headers)
+		if sensitiveValue(p.name, string(p.body)) {
+			clean = []byte(RedactedCredential)
+		}
+		h := map[string][]string{}
+		for k, vs := range p.headers {
+			for _, v := range vs {
+				value := n.text(v)
+				if sensitiveValue(k, v) {
+					value = RedactedCredential
+				}
+				h[n.text(k)] = append(h[n.text(k)], value)
+			}
+		}
+		deleteHeader(h, "Content-Length")
+		part, e := writer.CreatePart(h)
+		if e != nil {
+			return []byte(RedactedCredential)
+		}
+		if _, e = part.Write(clean); e != nil {
+			return []byte(RedactedCredential)
+		}
+	}
+	if writer.Close() != nil {
+		return []byte(RedactedCredential)
+	}
+	return buffer.Bytes()
 }
 
 // SanitizeOutput is the sole credential policy boundary for exported flow copies
@@ -628,7 +779,7 @@ func SanitizeOutput(flow *HTTPFlow, extra ...string) (*HTTPFlow, []string) {
 	for _, entry := range os.Environ() {
 		k, v, _ := strings.Cut(entry, "=")
 		if sensitiveValue(k, v) {
-			n.learnValue(v)
+			n.learnField(k, v)
 		}
 		n.discoverText(v)
 	}
@@ -687,7 +838,7 @@ func SanitizeOutput(flow *HTTPFlow, extra ...string) (*HTTPFlow, []string) {
 		for k, vs := range h {
 			for _, v := range vs {
 				if sensitiveValue(k, v) {
-					n.learnValue(v)
+					n.learnField(k, v)
 				}
 				_ = n.text(v)
 			}
