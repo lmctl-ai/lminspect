@@ -575,3 +575,14 @@ func TestCredentialEscapedTextAndJSONStream(t *testing.T) {
 		})
 	}
 }
+
+func TestCredentialTextCookiePairs(t *testing.T) {
+	first, second := syntheticKey(t), syntheticKey(t)
+	f := NewFlow(&Request{Method: "POST", Path: "/", Headers: map[string][]string{}, Content: []byte(`{"first":"` + first + `","second":"` + second + `"}`)}, "")
+	f.Response = MakeResponse(200, "Cookie: first="+first+"; second="+second+"\n", "text/plain")
+	out, e := f.ToJSON()
+	if e != nil {
+		t.Fatal(e)
+	}
+	inspectCapture(t, out, first, second)
+}

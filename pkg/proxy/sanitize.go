@@ -25,6 +25,7 @@ import (
 // Matches lmmock/internal/scenario's idempotent credential marker (17db1c3).
 const RedactedCredential = "<redacted:credential>"
 
+var cookieTextPattern = regexp.MustCompile(`(?im)\b(set-cookie|cookie)\s*[:=]\s*([^\r\n]+)`)
 var bearerPattern = regexp.MustCompile(`(?i)\b(?:bearer|basic)\s+([A-Za-z0-9._~+/=-]+)`)
 var vendorPattern = regexp.MustCompile(`sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`)
 var assignmentPattern = regexp.MustCompile(`([A-Za-z0-9_.%/-]+)["']?\s*[:=]\s*(?:"([^"\r\n]*)"|'([^'\r\n]*)'|([^\s&;,}\r\n]+))`)
@@ -251,6 +252,9 @@ func unescapeText(s string) (string, bool) {
 	return decoded, err == nil && decoded != s && len(decoded) < len(s)
 }
 func (n *outputSanitizer) discoverText(s string) {
+	for _, match := range cookieTextPattern.FindAllStringSubmatch(s, -1) {
+		n.learnField(match[1], match[2])
+	}
 	if decoded, ok := unescapeText(s); ok {
 		n.discoverText(decoded)
 	}
