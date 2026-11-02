@@ -206,3 +206,44 @@ Run the full end-to-end test suite (Go unit tests, example compilation, standalo
 ## License
 
 Apache-2.0. See [LICENSE](file:///home/ubuntu/repos/lmctl-ai/lminspect/LICENSE) for details.
+
+## Credential-safe captures
+
+Recording, JSON export, tap summaries/errors, replay/route diagnostics and lmcode
+`println` share one mandatory output policy (`proxy.SanitizeOutput`). It sanitizes
+a copy; authenticated upstream requests and client responses retain their wire
+content. Raw payloads are buffered in memory, never spooled to a capture file.
+
+Known credential fields are denied in both directions: Authorization/Basic/Bearer,
+proxy authorization, API keys, access/refresh tokens, passwords, secrets, cookies,
+URL userinfo and query parameters (including encoded names/values). Auth-like
+custom fields with high-entropy values and common vendor token patterns are also
+scrubbed. Credential-like environment variables seed discovery so otherwise
+unlabelled echoes of keys supplied to the proxy are removed too. Discovery covers
+both directions before writing, remembers previously observed credentials in RAM
+for the recorder/proxy lifetime, and covers percent/base64/JSON encodings and
+credentials split across SSE data events. Ordinary fields such as tokenizer,
+usage counts and booleans remain useful for fixtures.
+
+The stable replacement is `<redacted:credential>`, matching lmmock's importer.
+JSON classes and SSE framing/terminal events are retained; no secret length or
+fingerprint is preserved. Output Content-Length is recomputed. Gzip/deflate bodies
+are decoded for inspection and exported without the encoding header; unsupported,
+invalid compressed or non-UTF-8 bodies are replaced in full. Such omitted content
+cannot be reproduced by replay. This is credential redaction, not a general PII
+filter or a sandbox for arbitrary Go addons or external programs.
+
+Captures using real credentials belong **only in private Actions workflows** with
+organization secrets scoped to the capture step. Never pass values on command
+lines, enable shell tracing, or upload raw traffic. The public test workflows use
+random synthetic credentials only. No sanitization opt-out exists. New recording
+files use owner-only permissions on POSIX. Older captures are not retroactively
+cleaned: do not upload recordings produced by an unsafe older recorder.
+
+Set `LMSCRIPT_COMPILER_JS` to the `bin/lmscript` entry of a privately installed
+`@lmctl-ai/lmctl@0.2.448` package (the tests invoke Node directly, including on
+Windows). Run `go test ./...`, and
+`python scripts/test-sanitize-mutation.py` to prove removal of the output boundary
+turns the capture and printing tests red. CI uses a private pinned compiler and
+runs Go tests on Ubuntu, macOS and Windows. The Linux compatibility check imports
+and reimports exports using actual lmmock source pinned to `17db1c3`.

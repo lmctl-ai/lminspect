@@ -61,7 +61,14 @@ jobs:
 
       - name: install lmscript compiler
         if: env.ONLY_OK == 'true'
-        run: npm install -g @lmctl-ai/lmctl
+        run: |
+          npm install --prefix "$RUNNER_TEMP/lminspect-compiler" --ignore-scripts --no-audit --no-fund @lmctl-ai/lmctl@0.2.448
+          node - <<'JS'
+          const fs = require('node:fs'), path = require('node:path');
+          const root = path.join(process.env.RUNNER_TEMP, 'lminspect-compiler');
+          fs.appendFileSync(process.env.GITHUB_PATH, path.join(root, 'node_modules', '.bin') + '\n');
+          fs.appendFileSync(process.env.GITHUB_ENV, 'LMSCRIPT_COMPILER_JS=' + path.join(root, 'node_modules', '@lmctl-ai', 'lmctl', 'bin', 'lmscript') + '\n');
+          JS
 
       - name: build and test
         if: env.ONLY_OK == 'true'

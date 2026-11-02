@@ -1,0 +1,54 @@
+name: Credential redaction
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: '1.26'
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+      - name: Private pinned fixture compiler
+        run: |
+          npm install --prefix "$RUNNER_TEMP/lminspect-compiler" --ignore-scripts --no-audit --no-fund @lmctl-ai/lmctl@0.2.448
+          node - <<'JS'
+          const fs = require('node:fs'), path = require('node:path');
+          const root = path.join(process.env.RUNNER_TEMP, 'lminspect-compiler');
+          fs.appendFileSync(process.env.GITHUB_ENV, 'LMSCRIPT_COMPILER_JS=' + path.join(root, 'node_modules', '@lmctl-ai', 'lmctl', 'bin', 'lmscript') + '\n');
+          JS
+      - run: go test -v ./...
+      - run: go vet ./...
+      - name: Static build
+        run: CGO_ENABLED=0 go build -o "$RUNNER_TEMP/lminspect-test" .
+      - name: Removed output boundary must turn tests red
+        run: python scripts/test-sanitize-mutation.py
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: runner.os == 'Linux'
+        with:
+          repository: lmctl-ai/lmmock
+          ref: 17db1c3d708209354202c4e8b8e66e6e4b3b10c0
+          path: .compat-lmmock
+          persist-credentials: false
+      - name: Real pinned lmmock import and reimport
+        if: runner.os == 'Linux'
+        run: LMMOCK_SOURCE="$GITHUB_WORKSPACE/.compat-lmmock" python scripts/check-capture-import.py

@@ -133,6 +133,24 @@ This allows `lminspect` to act as an SSL-offloading transparent gateway between 
 
 ## 5. GitHub Actions Verification
 
-Both live and simulated flows can be executed in GitHub Actions:
+Synthetic loopback tests and private live captures have different secret boundaries:
 - **Self-contained E2E Interception:** Runs `lminspect run --ssl-bump --route ...=http://...` in front of `lmmock`, proving that dynamic TLS minting, CONNECT tunneling, payload logging, and routing work end-to-end on CI runners without external secrets.
-- **Live Upstream Logging:** Captures live transactions to `api.individual.githubcopilot.com` and records decrypted requests/responses into artifact JSONL files.
+- **Private Live Capture:** A real-key capture must run in a private Actions repository with the organization secret scoped only to the capture step. Build the repaired recorder from its tested commit; do not assume an older release contains this fix. Only sanitized exports may become artifacts. Never use shell tracing or write raw request/header dumps. This case study supplies no real keys and is not permission to capture against a vendor.
+
+
+## Credential redaction boundary
+
+Historical recording examples above predate the mandatory sanitizer. Current
+record/JSON, tap/error and lmcode printing paths pass through one sanitized output
+snapshot. Routing and on-wire authentication remain intact; only exported copies
+change. The policy discovers credentials in both request and response, including
+encoded query names, headers, cookies, URL userinfo, JSON/form/text, environment
+keys and split SSE deltas. `<redacted:credential>` preserves the lmmock import
+contract without retaining secret lengths. Unsupported opaque bodies are withheld,
+so those payloads need synthetic fixtures rather than an assumed exact replay.
+
+Before any private live capture, require the synthetic redaction matrix and the
+removed-boundary mutation to pass. The tests scan output bytes and decoded body
+bytes for fake credentials, their percent/base64 encodings and reassembled SSE
+text. A real pinned lmmock importer also checks import/reimport stability. Old
+recordings are not repaired in place and must not be uploaded as newly safe data.
