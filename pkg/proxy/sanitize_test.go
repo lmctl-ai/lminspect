@@ -586,3 +586,39 @@ func TestCredentialTextCookiePairs(t *testing.T) {
 	}
 	inspectCapture(t, out, first, second)
 }
+
+func TestCredentialMultipartBoundary(t *testing.T) {
+	key := syntheticKey(t)
+	t.Setenv("SYNTHETIC_VENDOR_API_KEY", key)
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	if w.SetBoundary(key) != nil {
+		t.Fatal("boundary fixture failed")
+	}
+	w.WriteField("tokenizer", "keep")
+	w.Close()
+	f := NewFlow(&Request{Method: "POST", Path: "/", Headers: map[string][]string{}}, "")
+	f.Response = MakeResponse(200, body.String(), w.FormDataContentType())
+	out, e := f.ToJSON()
+	if e != nil {
+		t.Fatal(e)
+	}
+	clean := inspectCapture(t, out, key)
+	_, params, e := mime.ParseMediaType(clean.Response.Header("Content-Type"))
+	if e != nil {
+		t.Fatal("sanitized multipart media type is invalid")
+	}
+	r := multipart.NewReader(bytes.NewReader(clean.Response.Content), params["boundary"])
+	p, e := r.NextPart()
+	if e != nil {
+		t.Fatal("sanitized boundary does not match body")
+	}
+	v, e := io.ReadAll(p)
+	if e != nil || string(v) != "keep" {
+		t.Fatal("ordinary multipart value lost")
+	}
+	again, e := clean.ToJSON()
+	if e != nil || !bytes.Equal(out, again) {
+		t.Fatal("sanitized boundary is not stable")
+	}
+}

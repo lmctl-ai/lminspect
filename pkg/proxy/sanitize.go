@@ -669,6 +669,44 @@ func (n *outputSanitizer) body(b []byte, h map[string][]string) []byte {
 	return []byte(n.text(string(b)))
 }
 
+// A MIME boundary is protocol syntax, so its stable placeholder must use the
+// boundary alphabet rather than angle brackets. Header and body use this choice.
+func (n *outputSanitizer) boundary(value string) string {
+	if n.text(value) != value {
+		return "redacted-credential"
+	}
+	return value
+}
+func (n *outputSanitizer) headerValue(name, value string) string {
+	if sensitiveValue(name, value) {
+		return RedactedCredential
+	}
+	if strings.EqualFold(name, "Content-Type") {
+		media, params, e := mime.ParseMediaType(value)
+		if e == nil {
+			if n.text(media) != media {
+				return "application/octet-stream"
+			}
+			changed := false
+			for key, v := range params {
+				clean := n.text(v)
+				if key == "boundary" {
+					clean = n.boundary(v)
+				} else if sensitiveValue(key, v) {
+					clean = RedactedCredential
+				}
+				changed = changed || clean != v
+				params[key] = clean
+			}
+			if changed {
+				return mime.FormatMediaType(media, params)
+			}
+			return value
+		}
+	}
+	return n.text(value)
+}
+
 type multipartOutputPart struct {
 	headers map[string][]string
 	body    []byte
@@ -730,7 +768,7 @@ func (n *outputSanitizer) multipartBody(b []byte, headers map[string][]string) [
 	}
 	var buffer bytes.Buffer
 	writer := multipart.NewWriter(&buffer)
-	if writer.SetBoundary(params["boundary"]) != nil {
+	if writer.SetBoundary(n.boundary(params["boundary"])) != nil {
 		return []byte(RedactedCredential)
 	}
 	for _, p := range parts {
@@ -741,10 +779,7 @@ func (n *outputSanitizer) multipartBody(b []byte, headers map[string][]string) [
 		h := map[string][]string{}
 		for k, vs := range p.headers {
 			for _, v := range vs {
-				value := n.text(v)
-				if sensitiveValue(k, v) {
-					value = RedactedCredential
-				}
+				value := n.headerValue(k, v)
 				h[n.text(k)] = append(h[n.text(k)], value)
 			}
 		}
@@ -859,11 +894,7 @@ func SanitizeOutput(flow *HTTPFlow, extra ...string) (*HTTPFlow, []string) {
 		for k, vs := range h {
 			out := make([]string, len(vs))
 			for j, v := range vs {
-				if sensitiveValue(k, v) {
-					out[j] = RedactedCredential
-				} else {
-					out[j] = n.text(v)
-				}
+				out[j] = n.headerValue(k, v)
 			}
 			clean[n.text(k)] = out
 		}
