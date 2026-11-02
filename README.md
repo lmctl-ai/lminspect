@@ -228,7 +228,8 @@ text are inspected before export. Ordinary fields such as tokenizer,
 usage counts and booleans remain useful for fixtures.
 
 The stable replacement is `<redacted:credential>`, matching lmmock's importer.
-JSON classes and SSE framing/terminal events are retained; no secret length or
+MIME boundaries use the grammar-safe `redacted-credential` marker consistently in
+the header and body. JSON classes and SSE framing/terminal events are retained; no secret length or
 fingerprint is preserved. Output Content-Length is recomputed. Gzip/deflate bodies
 are decoded for inspection and exported without the encoding header; unsupported,
 invalid compressed or non-UTF-8 bodies are replaced in full. Such omitted content
