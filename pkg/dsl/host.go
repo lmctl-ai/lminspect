@@ -14,8 +14,9 @@ type Inspector struct{}
 
 // NewHost creates and initializes a Host with the default lmcode registry.
 type Host struct {
-	Registry  *lmcode.Registry
-	Inspector *Inspector
+	Registry   *lmcode.Registry
+	Inspector  *Inspector
+	outputFlow *proxy.HTTPFlow
 }
 
 // NewHost initializes the Host, registry, and registers all lminspect types and methods.
@@ -27,7 +28,8 @@ func NewHost() *Host {
 	mustRegister(h.Registry.Context("inspect", "Inspector"))
 	mustRegister(h.Registry.Context("flow", "Flow"))
 	mustRegister(h.Registry.Function("println", []string{"string"}, "void", func(args []lmcode.Value) (lmcode.Value, error) {
-		fmt.Println(args[0].Str)
+		_, clean := proxy.SanitizeOutput(h.outputFlow, args[0].Str)
+		fmt.Print(clean[0] + "\n")
 		return lmcode.None(), nil
 	}))
 	mustRegister(h.Registry.Function("assert", []string{"bool", "string"}, "void", func(args []lmcode.Value) (lmcode.Value, error) {

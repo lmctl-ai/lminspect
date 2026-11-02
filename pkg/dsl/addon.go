@@ -11,11 +11,11 @@ import (
 
 // DslAddon executes a compiled lmscript bytecode addon (.dslb) within the proxy pipeline.
 type DslAddon struct {
-	program        *lmcode.Program
-	host           *Host
-	requestEntries []int
+	program         *lmcode.Program
+	host            *Host
+	requestEntries  []int
 	responseEntries []int
-	mu             sync.Mutex
+	mu              sync.Mutex
 }
 
 // NewDslAddon loads bytecode, verifies it against schema, and initializes entry points.
@@ -66,6 +66,8 @@ func (d *DslAddon) OnRequest(flow *proxy.HTTPFlow) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	d.host.outputFlow = flow
+	defer func() { d.host.outputFlow = nil }()
 	ctx := lmcode.NewContext()
 	ctx.Set("inspect", d.host.Inspector)
 	ctx.Set("flow", flow)
@@ -92,6 +94,8 @@ func (d *DslAddon) OnResponse(flow *proxy.HTTPFlow) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	d.host.outputFlow = flow
+	defer func() { d.host.outputFlow = nil }()
 	ctx := lmcode.NewContext()
 	ctx.Set("inspect", d.host.Inspector)
 	ctx.Set("flow", flow)

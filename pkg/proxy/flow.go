@@ -385,18 +385,19 @@ func (resp *Response) SetText(text string) {
 
 // HTTPFlow encapsulates a full HTTP request/response exchange along with metadata.
 type HTTPFlow struct {
-	ID          string    `json:"id"`
-	Request     *Request  `json:"request"`
-	Response    *Response `json:"response,omitempty"`
-	Error       string    `json:"error,omitempty"`
-	Intercepted bool      `json:"intercepted"`
-	Killed      bool      `json:"killed"`
-	Marked      bool      `json:"marked"`
-	Timestamp   int64     `json:"timestamp"`
-	DurationMs  int64     `json:"duration_ms"`
-	ClientAddr  string    `json:"client_addr"`
-	ServerAddr  string    `json:"server_addr"`
-	mu          sync.RWMutex
+	ID           string    `json:"id"`
+	Request      *Request  `json:"request"`
+	Response     *Response `json:"response,omitempty"`
+	Error        string    `json:"error,omitempty"`
+	Intercepted  bool      `json:"intercepted"`
+	Killed       bool      `json:"killed"`
+	Marked       bool      `json:"marked"`
+	Timestamp    int64     `json:"timestamp"`
+	DurationMs   int64     `json:"duration_ms"`
+	ClientAddr   string    `json:"client_addr"`
+	ServerAddr   string    `json:"server_addr"`
+	outputMemory *outputMemory
+	mu           sync.RWMutex
 }
 
 // NewFlow creates a new HTTPFlow initialized with a unique ID and timestamp.
@@ -453,8 +454,6 @@ func (f *HTTPFlow) Respond(statusCode int, body string, contentType string) {
 
 // ToJSON serializes the flow into JSON bytes.
 func (f *HTTPFlow) ToJSON() ([]byte, error) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
 	return json.Marshal(f)
 }
 

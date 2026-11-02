@@ -12,8 +12,9 @@ import (
 
 // TapAddon logs transited flows to a writer (default stderr) in real-time.
 type TapAddon struct {
-	Out io.Writer
-	mu  sync.Mutex
+	Out          io.Writer
+	outputMemory outputMemory
+	mu           sync.Mutex
 }
 
 func NewTapAddon(out io.Writer) *TapAddon {
@@ -30,6 +31,8 @@ func (t *TapAddon) OnRequest(flow *HTTPFlow) error {
 }
 
 func (t *TapAddon) OnResponse(flow *HTTPFlow) error {
+	flow.useOutputMemory(&t.outputMemory)
+	flow, _ = SanitizeOutput(flow)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -57,20 +60,23 @@ func (t *TapAddon) OnResponse(flow *HTTPFlow) error {
 }
 
 func (t *TapAddon) OnError(flow *HTTPFlow, err error) {
+	flow.useOutputMemory(&t.outputMemory)
+	flow, messages := SanitizeOutput(flow, err.Error())
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	fmt.Fprintf(t.Out, "[ERROR] %s %s -> %v\n", flow.Request.Method, flow.Request.URL(), err)
+	fmt.Fprintf(t.Out, "[ERROR] %s %s -> %v\n", flow.Request.Method, flow.Request.URL(), messages[0])
 }
 
 // RecordAddon appends structured JSON lines for every completed flow.
 type RecordAddon struct {
-	filePath string
-	file     *os.File
-	mu       sync.Mutex
+	outputMemory outputMemory
+	filePath     string
+	file         *os.File
+	mu           sync.Mutex
 }
 
 func NewRecordAddon(filePath string) (*RecordAddon, error) {
-	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +89,7 @@ func NewRecordAddon(filePath string) (*RecordAddon, error) {
 func (r *RecordAddon) Name() string { return "record" }
 
 func (r *RecordAddon) OnResponse(flow *HTTPFlow) error {
+	flow.useOutputMemory(&r.outputMemory)
 	data, err := flow.ToJSON()
 	if err != nil {
 		return err

@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,7 +29,7 @@ const usage = `usage: lminspect --version | --dsl-schema [--json] | --dsl-signat
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, usage)
+		safeErrorln(usage)
 		os.Exit(2)
 	}
 
@@ -36,7 +37,7 @@ func main() {
 	switch cmd {
 	case "--version":
 		if len(os.Args) > 2 {
-			fmt.Fprintln(os.Stderr, "extra argument to --version")
+			safeErrorln("extra argument to --version")
 			os.Exit(2)
 		}
 		fmt.Printf("lminspect %s\n", version)
@@ -57,7 +58,7 @@ func main() {
 
 	case "--dsl":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "missing bytecode file for --dsl")
+			safeErrorln("missing bytecode file for --dsl")
 			os.Exit(2)
 		}
 		for _, file := range os.Args[2:] {
@@ -83,7 +84,7 @@ func main() {
 			runProxy(os.Args[1:])
 			return
 		}
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n%s\n", cmd, usage)
+		safeErrorf("unknown command: %s\n%s\n", cmd, usage)
 		os.Exit(2)
 	}
 }
@@ -91,21 +92,21 @@ func main() {
 func runBytecode(filePath string) int {
 	bytecode, err := os.ReadFile(filePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot read bytecode file: %v\n", err)
+		safeErrorf("cannot read bytecode file: %v\n", err)
 		return 3
 	}
 
 	host := dsl.NewHost()
 	prog, err := lmcode.Load(bytecode, embeddedSchema, host.Registry)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "load error: %v\n", err)
+		safeErrorf("load error: %v\n", err)
 		return 3
 	}
 
 	ctx := lmcode.NewContext()
 	ctx.Set("inspect", host.Inspector)
 	if err := prog.Run(ctx, host.Registry); err != nil {
-		fmt.Fprintf(os.Stderr, "run error: %v\n", err)
+		safeErrorf("run error: %v\n", err)
 		return 3
 	}
 	fmt.Println(`{"ok": true, "result": null}`)
@@ -122,8 +123,8 @@ func runProxy(args []string) {
 	caCert := fs.String("ca-cert", "", "Path to custom Root CA certificate")
 	caKey := fs.String("ca-key", "", "Path to custom Root CA private key")
 	insecure := fs.Bool("insecure", true, "Skip TLS verification for upstream connections")
-	tap := fs.Bool("tap", false, "Print real-time flow summary to stderr")
-	record := fs.String("record", "", "Append transited flows to JSONL file")
+	tap := fs.Bool("tap", false, "Print sanitized flow summary to stderr")
+	record := fs.String("record", "", "Append sanitized flows to JSONL file")
 	replayServer := fs.String("replay-server", "", "Serve recorded responses from JSONL file")
 	script := fs.String("script", "", "Path to compiled .dslb addon script")
 
@@ -161,7 +162,7 @@ func runProxy(args []string) {
 	if *record != "" {
 		rec, err := proxy.NewRecordAddon(*record)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to initialize record addon: %v\n", err)
+			safeErrorf("failed to initialize record addon: %v\n", err)
 			os.Exit(1)
 		}
 		defer rec.Close()
@@ -172,7 +173,7 @@ func runProxy(args []string) {
 	if *replayServer != "" {
 		rep, err := proxy.NewReplayServerAddon(*replayServer)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to load replay-server flows: %v\n", err)
+			safeErrorf("failed to load replay-server flows: %v\n", err)
 			os.Exit(1)
 		}
 		addonMgr.Register(rep)
@@ -223,7 +224,7 @@ func runProxy(args []string) {
 	if *script != "" {
 		dslAddon, err := dsl.NewDslAddon(*script, embeddedSchema)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to initialize DSL script addon: %v\n", err)
+			safeErrorf("failed to initialize DSL script addon: %v\n", err)
 			os.Exit(1)
 		}
 		addonMgr.Register(dslAddon)
@@ -239,7 +240,7 @@ func runProxy(args []string) {
 		Addons:             addonMgr,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "server setup error: %v\n", err)
+		safeErrorf("server setup error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -252,9 +253,9 @@ func runProxy(args []string) {
 		os.Exit(0)
 	}()
 
-	fmt.Fprintf(os.Stderr, "lminspect proxy listening on %s (mode: %s, ssl-bump: %v)\n", addr, *mode, *sslBump)
+	safeErrorf("lminspect proxy listening on %s (mode: %s, ssl-bump: %v)\n", addr, *mode, *sslBump)
 	if err := server.Start(); err != nil && err != http.ErrServerClosed {
-		fmt.Fprintf(os.Stderr, "proxy error: %v\n", err)
+		safeErrorf("proxy error: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -266,13 +267,13 @@ func runReplay(args []string) {
 	_ = fs.Parse(args)
 
 	if *clientFile == "" {
-		fmt.Fprintln(os.Stderr, "usage: lminspect replay --client FILE.jsonl [--target URL]")
+		safeErrorln("usage: lminspect replay --client FILE.jsonl [--target URL]")
 		os.Exit(2)
 	}
 
 	f, err := os.Open(*clientFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to open replay file: %v\n", err)
+		safeErrorf("failed to open replay file: %v\n", err)
 		os.Exit(1)
 	}
 	defer f.Close()
@@ -302,14 +303,16 @@ func runReplay(args []string) {
 		}
 		resp, err := client.Do(req)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[%d/%d] REPLAY ERROR: %v\n", i+1, len(flows), err)
+			_, clean := proxy.SanitizeOutput(fl, err.Error())
+			safeErrorf("[%d/%d] REPLAY ERROR: %s\n", i+1, len(flows), clean[0])
 			continue
 		}
 		resp.Body.Close()
-		fmt.Fprintf(os.Stderr, "[%d/%d] REPLAYED: %s %s -> %d\n", i+1, len(flows), fl.Request.Method, fl.Request.URL(), resp.StatusCode)
+		clean, _ := proxy.SanitizeOutput(fl)
+		safeErrorf("[%d/%d] REPLAYED: %s %s -> %d\n", i+1, len(flows), clean.Request.Method, clean.Request.URL(), resp.StatusCode)
 		success++
 	}
-	fmt.Fprintf(os.Stderr, "Successfully replayed %d/%d requests.\n", success, len(flows))
+	safeErrorf("Successfully replayed %d/%d requests.\n", success, len(flows))
 }
 
 func runCertgen(args []string) {
@@ -320,14 +323,14 @@ func runCertgen(args []string) {
 
 	ca, err := proxy.NewCertAuthority(*certPath, *keyPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "certgen error: %v\n", err)
+		safeErrorf("certgen error: %v\n", err)
 		os.Exit(1)
 	}
 	if err := ca.Save(*certPath, *keyPath); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to save CA: %v\n", err)
+		safeErrorf("failed to save CA: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Generated Root CA certificate at %s and key at %s\n", *certPath, *keyPath)
+	safeDiagnostic(os.Stdout, fmt.Sprintf("Generated Root CA certificate at %s and key at %s\n", *certPath, *keyPath))
 }
 
 type stringSliceFlag []string
@@ -339,4 +342,13 @@ func (s *stringSliceFlag) String() string {
 func (s *stringSliceFlag) Set(val string) error {
 	*s = append(*s, val)
 	return nil
+}
+
+// All diagnostic output shares the proxy's credential policy, including route
+// URLs, replay errors and reverse-proxy startup arguments.
+func safeErrorf(format string, args ...any) { safeDiagnostic(os.Stderr, fmt.Sprintf(format, args...)) }
+func safeErrorln(args ...any)               { safeDiagnostic(os.Stderr, fmt.Sprintln(args...)) }
+func safeDiagnostic(w io.Writer, text string) {
+	_, clean := proxy.SanitizeOutput(nil, text)
+	fmt.Fprint(w, clean[0])
 }

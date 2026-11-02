@@ -1,0 +1,23 @@
+package compatibility_test
+
+import (
+ "bytes"
+ "crypto/rand"
+ "encoding/hex"
+ "encoding/json"
+ "testing"
+ "capture-check/scenario"
+ "github.com/lmctl-ai/lminspect/pkg/proxy"
+)
+
+func TestLmmockReimport(t *testing.T) {
+ raw:=make([]byte,24);if _,e:=rand.Read(raw);e!=nil{t.Fatal(e)};key:="synthetic-"+hex.EncodeToString(raw)
+ f:=proxy.NewFlow(&proxy.Request{Method:"POST",Scheme:"https",Host:"vendor.invalid",Port:443,Path:"/v1/messages?key="+key,Headers:map[string][]string{"Authorization":{"Bearer "+key},"Content-Type":{"application/json"}},Content:[]byte(`{"api_key":"`+key+`","model":"mock-agent"}`)},"127.0.0.1")
+ f.Response=proxy.MakeResponse(200,"event: text\ndata: {\"delta\":{\"text\":\""+key[:20]+"\"}}\n\nevent: text\ndata: {\"delta\":{\"text\":\""+key[20:]+"\"}}\n\ndata: [DONE]\n\n","text/event-stream")
+ capture,e:=f.ToJSON();if e!=nil{t.Fatal(e)};if bytes.Contains(capture,[]byte(key)){t.Fatal("unsafe capture")}
+ first,flows,e:=scenario.Import(bytes.NewReader(capture),false);if e!=nil{t.Fatalf("real lmmock importer rejected sanitized capture: %v",e)}
+ if len(first.Rules)!=1||len(first.Rules[0].Reply.Events)!=3{t.Fatal("import lost complete stream")}
+ var buf bytes.Buffer;for _,flow:=range flows {if json.NewEncoder(&buf).Encode(flow)!=nil{t.Fatal("reimport encoding failed")}}
+ second,_,e:=scenario.Import(&buf,false);if e!=nil{t.Fatal("second import failed")};a,_:=json.Marshal(first);b,_:=json.Marshal(second);if !bytes.Equal(a,b){t.Fatal("lmmock import not idempotent")}
+ if bytes.Contains(a,[]byte(key)){t.Fatal("lmmock import leaked credential")}
+}

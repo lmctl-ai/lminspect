@@ -29,8 +29,9 @@ type WebSocketHook interface {
 
 // AddonManager manages registration and execution of addons.
 type AddonManager struct {
-	addons []Addon
-	mu     sync.RWMutex
+	outputMemory outputMemory
+	addons       []Addon
+	mu           sync.RWMutex
 }
 
 // NewAddonManager creates a new AddonManager.
@@ -47,6 +48,9 @@ func (m *AddonManager) Register(addon Addon) {
 
 // TriggerRequest executes OnRequest across all registered addons in order.
 func (m *AddonManager) TriggerRequest(flow *HTTPFlow) error {
+	flow.useOutputMemory(&m.outputMemory)
+	// Learn before mutable hooks can remove a credential from the live flow.
+	_, _ = SanitizeOutput(flow)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, a := range m.addons {
@@ -64,6 +68,9 @@ func (m *AddonManager) TriggerRequest(flow *HTTPFlow) error {
 
 // TriggerResponse executes OnResponse across all registered addons in order.
 func (m *AddonManager) TriggerResponse(flow *HTTPFlow) error {
+	flow.useOutputMemory(&m.outputMemory)
+	// Learn before mutable hooks can remove a credential from the live flow.
+	_, _ = SanitizeOutput(flow)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, a := range m.addons {
@@ -81,6 +88,9 @@ func (m *AddonManager) TriggerResponse(flow *HTTPFlow) error {
 
 // TriggerError executes OnError across all registered addons.
 func (m *AddonManager) TriggerError(flow *HTTPFlow, err error) {
+	flow.useOutputMemory(&m.outputMemory)
+	// Learn before mutable hooks can remove a credential from the live flow.
+	_, _ = SanitizeOutput(flow)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, a := range m.addons {

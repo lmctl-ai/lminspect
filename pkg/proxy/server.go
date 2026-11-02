@@ -179,7 +179,7 @@ func (s *ProxyServer) handleHTTP(w http.ResponseWriter, req *http.Request, isTLS
 	// Trigger Request Addons
 	if err := s.addons.TriggerRequest(flow); err != nil {
 		s.addons.TriggerError(flow, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, sanitizedFlowError(flow, err), http.StatusInternalServerError)
 		return
 	}
 
@@ -208,7 +208,7 @@ func (s *ProxyServer) handleHTTP(w http.ResponseWriter, req *http.Request, isTLS
 	outReq, err := flow.Request.ToHTTPRequest()
 	if err != nil {
 		s.addons.TriggerError(flow, err)
-		http.Error(w, fmt.Sprintf("Failed to construct upstream request: %v", err), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Failed to construct upstream request: %s", sanitizedFlowError(flow, err)), http.StatusBadRequest)
 		return
 	}
 
@@ -216,7 +216,7 @@ func (s *ProxyServer) handleHTTP(w http.ResponseWriter, req *http.Request, isTLS
 	if err != nil {
 		flow.Error = err.Error()
 		s.addons.TriggerError(flow, err)
-		http.Error(w, fmt.Sprintf("Upstream connection error: %v", err), http.StatusBadGateway)
+		http.Error(w, fmt.Sprintf("Upstream connection error: %s", sanitizedFlowError(flow, err)), http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
@@ -224,7 +224,7 @@ func (s *ProxyServer) handleHTTP(w http.ResponseWriter, req *http.Request, isTLS
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		s.addons.TriggerError(flow, err)
-		http.Error(w, fmt.Sprintf("Error reading upstream response: %v", err), http.StatusBadGateway)
+		http.Error(w, fmt.Sprintf("Error reading upstream response: %s", sanitizedFlowError(flow, err)), http.StatusBadGateway)
 		return
 	}
 
@@ -234,7 +234,7 @@ func (s *ProxyServer) handleHTTP(w http.ResponseWriter, req *http.Request, isTLS
 	// Trigger Response Addons
 	if err := s.addons.TriggerResponse(flow); err != nil {
 		s.addons.TriggerError(flow, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, sanitizedFlowError(flow, err), http.StatusInternalServerError)
 		return
 	}
 
@@ -279,7 +279,7 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, req *http.Request) {
 
 	clientConn, _, err := hj.Hijack()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		http.Error(w, sanitizedFlowError(NewFlow(NewRequest(req, nil), req.RemoteAddr), err), http.StatusServiceUnavailable)
 		return
 	}
 
@@ -404,4 +404,9 @@ func (w *tlsResponseWriter) Write(data []byte) (int, error) {
 		w.WriteHeader(http.StatusOK)
 	}
 	return w.conn.Write(data)
+}
+
+func sanitizedFlowError(flow *HTTPFlow, err error) string {
+	_, messages := SanitizeOutput(flow, err.Error())
+	return messages[0]
 }

@@ -27,7 +27,7 @@ func TestDslHostDirectFlowExecution(t *testing.T) {
 	}
 
 	lmsSource := `
-p = _lmcode_ schema="` + schemaFile + `";
+p = _lmcode_ schema="` + filepath.ToSlash(schemaFile) + `";
 
 let f = inspect.new_flow("POST", "https://api.internal:8443/v1/resource?action=create");
 assert(f.request().method() == "POST", "method mismatch");
@@ -46,7 +46,7 @@ assert(f.response().text() == "{\"created\": true}", "response text mismatch");
 assert(f.response().header("content-type") == "application/json", "content type mismatch");
 
 end _lmcode_
-savedsl(p, "` + filepath.Join(tempDir, "test.dslb") + `");
+savedsl(p, "` + filepath.ToSlash(filepath.Join(tempDir, "test.dslb")) + `");
 `
 	lmsFile := filepath.Join(tempDir, "test.lms")
 	dslbFile := filepath.Join(tempDir, "test.dslb")
@@ -59,8 +59,8 @@ savedsl(p, "` + filepath.Join(tempDir, "test.dslb") + `");
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command("lmscript", lmsFile, dslbFile)
-	cmd.Env = append(os.Environ(), "PATH="+absBin+":"+os.Getenv("PATH"))
+	cmd := compilerCommand(lmsFile, dslbFile)
+	cmd.Env = append(os.Environ(), "PATH="+absBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("lmscript compilation failed: %v, output: %s", err, string(out))
 	}
@@ -100,7 +100,7 @@ func TestDslAddonHooks(t *testing.T) {
 	}
 
 	lmsSource := `
-p = _lmcode_ schema="` + schemaFile + `";
+p = _lmcode_ schema="` + filepath.ToSlash(schemaFile) + `";
 
 @request
 fn on_request(f: Flow) -> void implements RequestHook {
@@ -119,7 +119,7 @@ fn on_response(f: Flow) -> void implements ResponseHook {
 }
 
 end _lmcode_
-savedsl(p, "` + filepath.Join(tempDir, "hooks.dslb") + `");
+savedsl(p, "` + filepath.ToSlash(filepath.Join(tempDir, "hooks.dslb")) + `");
 `
 	lmsFile := filepath.Join(tempDir, "hooks.lms")
 	dslbFile := filepath.Join(tempDir, "hooks.dslb")
@@ -132,8 +132,8 @@ savedsl(p, "` + filepath.Join(tempDir, "hooks.dslb") + `");
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command("lmscript", lmsFile, dslbFile)
-	cmd.Env = append(os.Environ(), "PATH="+absBin+":"+os.Getenv("PATH"))
+	cmd := compilerCommand(lmsFile, dslbFile)
+	cmd.Env = append(os.Environ(), "PATH="+absBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("lmscript compile error: %v, out: %s", err, string(out))
 	}
@@ -184,4 +184,13 @@ savedsl(p, "` + filepath.Join(tempDir, "hooks.dslb") + `");
 	if flow3.Response.StatusCode != 200 || flow3.Response.Text() != "OVERRIDDEN_404" {
 		t.Fatalf("response not overridden: %d %s", flow3.Response.StatusCode, flow3.Response.Text())
 	}
+}
+
+// Invoke the private package's JS entry directly, including on Windows where
+// exec.Command cannot execute an npm .cmd shim as a native process.
+func compilerCommand(args ...string) *exec.Cmd {
+	if entry := os.Getenv("LMSCRIPT_COMPILER_JS"); entry != "" {
+		return exec.Command("node", append([]string{entry}, args...)...)
+	}
+	return exec.Command("lmscript", args...)
 }
