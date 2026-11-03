@@ -3,7 +3,6 @@ name: ci
 on:
   push:
     branches: [main]
-    tags: ['v*']
     paths-ignore: ["durable-memory/**", "**.md"]
   pull_request:
     paths-ignore: ["durable-memory/**", "**.md"]
@@ -20,11 +19,35 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
 
 jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check automatic release version contract
+        run: python3 scripts/test-release-version.py
+      - id: version
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]]; then
+            version="$(bash scripts/derive-release-version.sh "$GITHUB_RUN_NUMBER")"
+            release=true
+          else
+            version="$(bash scripts/derive-release-version.sh --diagnostic)"
+            release=false
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "lminspect version $version (release=$release)"
   build:
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +60,7 @@ jobs:
     name: ${{ matrix.label }}
     env:
       ONLY_OK: ${{ github.event_name != 'workflow_dispatch' || inputs.only == 'all' || matrix.label == inputs.only }}
+      LINSPECT_RELEASE_VERSION: ${{ needs.version.outputs.version }}
     defaults:
       run:
         shell: bash
@@ -89,8 +113,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [version, build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
       contents: write # push to the dist branch
@@ -128,14 +152,16 @@ jobs:
           else
             git commit -m "dist: lminspect binaries from ${GITHUB_SHA}"
           fi
-          git push --force-with-lease origin dist
+          git push origin dist
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    if: needs.version.outputs.release == 'true'
+    needs: [version, build]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -151,19 +177,15 @@ jobs:
         run: |
           chmod +x dist/lminspect-linux-x64
           got="$(dist/lminspect-linux-x64 --version)"
-          test "$got" = "lminspect ${GITHUB_REF_NAME#v}" || { echo "::error::tag $GITHUB_REF_NAME but binary says '$got'"; exit 1; }
+          test "$got" = "lminspect $RELEASE_VERSION" || { echo "::error::release version $RELEASE_VERSION but binary says '$got'"; exit 1; }
 
       - name: generate binary checksums
         run: |
           cd dist
-          find . -maxdepth 1 -type f -name 'lminspect-*' ! -name '*.sha256' -printf '%f\0' | sort -z | xargs -0 sha256sum > SHA256SUMS
+          sha256sum * > SHA256SUMS
 
       - name: attach binaries to the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --clobber dist/*
-          else
-            gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes dist/*
-          fi
+          scripts/publish-release.sh "v$RELEASE_VERSION" dist

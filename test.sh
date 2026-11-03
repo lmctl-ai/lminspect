@@ -7,7 +7,8 @@ cd "${ROOT_DIR}"
 echo "=== 1. Building lminspect Static Binary ==="
 export CGO_ENABLED=0
 mkdir -p "${ROOT_DIR}/bin" "${ROOT_DIR}/build"
-go build -trimpath -ldflags="-s -w" -o "${ROOT_DIR}/bin/lminspect" main.go
+RELEASE_VERSION="${LINSPECT_RELEASE_VERSION:-$(head -n1 VERSION | tr -d '[:space:]')}"
+go build -trimpath -ldflags="-s -w -X main.version=${RELEASE_VERSION}" -o "${ROOT_DIR}/bin/lminspect" main.go
 export PATH="${ROOT_DIR}/bin:${PATH}"
 
 echo "=== 2. Running Go Unit Tests ==="
