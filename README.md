@@ -62,6 +62,19 @@ CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/lminspect main.go
 
 ---
 
+### GitHub Actions
+
+Other repositories build lminspect from a pinned commit with the composite Action and
+then record the traffic a client under test sends, for example as a recording reverse
+proxy in front of a mock API (`--mode reverse:URL --record flows.jsonl`); the flows are
+JSON lines with `request.{method,host,port,path,headers,content}` and
+`response.{status_code,headers,content}` (contents are base64, credentials sanitized):
+
+```yaml
+- uses: lmctl-ai/lminspect@<commit>   # exports LMINSPECT_BIN and adds it to PATH
+- run: lminspect run --listen 127.0.0.1:9090 --mode "reverse:$LMMOCK_URL" --record flows.jsonl &
+```
+
 ## Quick Start
 
 ### 1. Generate Local Root CA

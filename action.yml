@@ -1,0 +1,34 @@
+name: lminspect traffic proxy
+description: Build the lminspect executable from this checkout (pure Go, static) and expose it to later steps for recording or inspecting HTTP traffic in CI.
+inputs:
+  output-dir:
+    description: Directory for the built executable; defaults to a folder under the runner's temporary directory.
+    required: false
+outputs:
+  executable:
+    description: Absolute path of the built lminspect executable.
+    value: ${{ steps.build.outputs.executable }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache: false
+    - id: build
+      shell: bash
+      env:
+        ACTION_HOME: ${{ github.action_path }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+        CGO_ENABLED: '0'
+      run: |
+        out="$OUTPUT_DIR"
+        if [ -z "$out" ]; then out="$(echo "$RUNNER_TEMP" | tr '\\' '/')/lminspect-app"; fi
+        mkdir -p "$out"
+        exe="$out/lminspect"
+        if [ "$RUNNER_OS" = Windows ]; then exe="$exe.exe"; fi
+        go -C "$ACTION_HOME" build -trimpath -ldflags='-s -w' -o "$exe" .
+        "$exe" --version 2>/dev/null || true
+        printf '%s\n' "$out" >> "$GITHUB_PATH"
+        printf 'LMINSPECT_BIN=%s\n' "$exe" >> "$GITHUB_ENV"
+        printf 'executable=%s\n' "$exe" >> "$GITHUB_OUTPUT"
