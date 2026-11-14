@@ -21,6 +21,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/andybalholm/brotli"
+	"github.com/klauspost/compress/zstd"
 )
 
 func syntheticKey(t *testing.T) string {
@@ -261,7 +264,7 @@ func TestCredentialMarkerRemainsStable(t *testing.T) {
 }
 
 func TestCredentialCompressedAndLargeBodies(t *testing.T) {
-	for _, encoding := range []string{"gzip", "deflate", "unsupported", "invalid"} {
+	for _, encoding := range []string{"gzip", "deflate", "br", "zstd", "deflate, br", "unsupported", "invalid"} {
 		t.Run(encoding, func(t *testing.T) {
 			key := syntheticKey(t)
 			text := strings.Repeat("harmless-", 20000)
@@ -275,6 +278,23 @@ func TestCredentialCompressedAndLargeBodies(t *testing.T) {
 				w := zlib.NewWriter(&compressed)
 				w.Write(raw)
 				w.Close()
+			} else if encoding == "br" {
+				w := brotli.NewWriter(&compressed)
+				w.Write(raw)
+				w.Close()
+			} else if encoding == "zstd" {
+				w, _ := zstd.NewWriter(&compressed)
+				w.Write(raw)
+				w.Close()
+			} else if encoding == "deflate, br" {
+				// Applied in order: deflate first, then br; undone in reverse.
+				var inner bytes.Buffer
+				zw := zlib.NewWriter(&inner)
+				zw.Write(raw)
+				zw.Close()
+				bw := brotli.NewWriter(&compressed)
+				bw.Write(inner.Bytes())
+				bw.Close()
 			} else {
 				compressed.Write(raw)
 			}
@@ -292,13 +312,18 @@ func TestCredentialCompressedAndLargeBodies(t *testing.T) {
 			if g.Response.Header("Content-Encoding") != "" {
 				t.Fatal("stale encoding persisted")
 			}
-			if encoding == "gzip" || encoding == "deflate" {
+			if encoding == "gzip" || encoding == "deflate" || encoding == "br" || encoding == "zstd" || encoding == "deflate, br" {
 				var tree map[string]any
 				if json.Unmarshal(g.Response.Content, &tree) != nil || tree["text"] != text || tree["tokenizer"] != "TokenizerPublicConfigurationAlpha-12345" {
 					t.Fatal("ordinary large payload was lost or clipped")
 				}
+				if g.Response.Header("X-Lminspect-Note") != "" {
+					t.Fatal("a decoded body must not carry a redaction note")
+				}
 			} else if string(g.Response.Content) != RedactedCredential {
 				t.Fatal("opaque body must fail closed")
+			} else if !strings.Contains(g.Response.Header("X-Lminspect-Note"), "could not decode content-encoding") {
+				t.Fatal("a body redacted for want of a decoder must say why")
 			}
 		})
 	}

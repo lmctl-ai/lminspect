@@ -243,9 +243,10 @@ usage counts and booleans remain useful for fixtures.
 The stable replacement is `<redacted:credential>`, matching lmmock's importer.
 MIME boundaries use the grammar-safe `redacted-credential` marker consistently in
 the header and body. JSON classes and SSE framing/terminal events are retained; no secret length or
-fingerprint is preserved. Output Content-Length is recomputed. Gzip/deflate bodies
-are decoded for inspection and exported without the encoding header; unsupported,
-invalid compressed or non-UTF-8 bodies are replaced in full. Such omitted content
+fingerprint is preserved. Output Content-Length is recomputed. Gzip, deflate, brotli (`br`)
+and zstd bodies (and comma lists of them) are decoded for inspection and exported
+without the encoding header; unsupported, invalid compressed or non-UTF-8 bodies are
+replaced in full, and a decoding failure is named in an `X-Lminspect-Note` header. Such omitted content
 cannot be reproduced by replay. This is credential redaction, not a general PII
 filter or a sandbox for arbitrary Go addons or external programs.
 

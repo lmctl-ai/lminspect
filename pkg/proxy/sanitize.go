@@ -6,6 +6,7 @@ import (
 	"compress/zlib"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"mime"
@@ -20,6 +21,9 @@ import (
 	"sync"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/andybalholm/brotli"
+	"github.com/klauspost/compress/zstd"
 )
 
 // Matches lmmock/internal/scenario's idempotent credential marker (17db1c3).
@@ -104,7 +108,13 @@ func (f *HTTPFlow) useOutputMemory(memory *outputMemory) {
 	}
 }
 
-type outputSanitizer struct{ secrets map[string]bool }
+type outputSanitizer struct {
+	secrets map[string]bool
+	// variants() is expensive and text() is called once per field of a large body, so the
+	// result is kept until a new secret is learned (secrets only ever grow).
+	variantCache []string
+	variantFor   int
+}
 
 func (n *outputSanitizer) add(s string) {
 	if s == "" || markerForms[s] {
@@ -165,6 +175,9 @@ func (n *outputSanitizer) learnField(name, value string) {
 	}
 }
 func (n *outputSanitizer) variants() []string {
+	if n.variantCache != nil && n.variantFor == len(n.secrets) {
+		return n.variantCache
+	}
 	all := map[string]bool{}
 	for s := range n.secrets {
 		all[s] = true
@@ -210,6 +223,7 @@ func (n *outputSanitizer) variants() []string {
 		}
 		return len(out[i]) > len(out[j])
 	})
+	n.variantCache, n.variantFor = out, len(n.secrets)
 	return out
 }
 
@@ -233,6 +247,9 @@ var protectedMarkers = func() *regexp.Regexp {
 }()
 
 func replaceOutsideMarkers(s, secret string) string {
+	if !strings.Contains(s, secret) {
+		return s // nothing to replace; skip the marker scan
+	}
 	var out strings.Builder
 	at := 0
 	for _, span := range protectedMarkers.FindAllStringIndex(s, -1) {
@@ -460,29 +477,49 @@ func deleteHeader(h map[string][]string, k string) {
 		}
 	}
 }
+
+// decodeContent undoes the Content-Encoding (gzip, deflate, br, zstd; a comma list is undone
+// last-applied-first) so the body can be inspected and sanitized. A body that cannot be
+// decoded cannot be sanitized either, so it is replaced by the credential marker; the reason is
+// recorded in the X-Lminspect-Note header so the redaction is not mistaken for a secret.
 func decodeContent(b []byte, h map[string][]string) []byte {
-	encoding := strings.ToLower(strings.TrimSpace(getHeader(h, "Content-Encoding")))
-	if encoding == "" || encoding == "identity" {
+	header := strings.ToLower(strings.TrimSpace(getHeader(h, "Content-Encoding")))
+	if header == "" || header == "identity" {
 		return b
 	}
-	var r io.ReadCloser
-	var e error
-	switch encoding {
-	case "gzip":
-		r, e = gzip.NewReader(bytes.NewReader(b))
-	case "deflate":
-		r, e = zlib.NewReader(bytes.NewReader(b))
-	default:
-		e = io.ErrUnexpectedEOF
-	}
 	deleteHeader(h, "Content-Encoding")
-	if e != nil {
-		return []byte(RedactedCredential)
-	}
-	defer r.Close()
-	plain, e := io.ReadAll(r)
-	if e != nil {
-		return []byte(RedactedCredential)
+	encodings := strings.Split(header, ",")
+	plain := b
+	for i := len(encodings) - 1; i >= 0; i-- {
+		encoding := strings.TrimSpace(encodings[i])
+		var r io.Reader
+		var e error
+		switch encoding {
+		case "", "identity":
+			continue
+		case "gzip", "x-gzip":
+			r, e = gzip.NewReader(bytes.NewReader(plain))
+		case "deflate":
+			r, e = zlib.NewReader(bytes.NewReader(plain))
+		case "br":
+			r = brotli.NewReader(bytes.NewReader(plain))
+		case "zstd":
+			var d *zstd.Decoder
+			d, e = zstd.NewReader(bytes.NewReader(plain))
+			if e == nil {
+				defer d.Close()
+				r = d
+			}
+		default:
+			e = fmt.Errorf("unsupported content-encoding %q", encoding)
+		}
+		if e == nil {
+			plain, e = io.ReadAll(r)
+		}
+		if e != nil {
+			h["X-Lminspect-Note"] = []string{"body redacted: could not decode content-encoding " + encoding}
+			return []byte(RedactedCredential)
+		}
 	}
 	return plain
 }
