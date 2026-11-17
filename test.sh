@@ -17,7 +17,9 @@ go test -v ./...
 echo "=== 3. Testing CLI Standard Flags ==="
 "${ROOT_DIR}/bin/lminspect" --version
 "${ROOT_DIR}/bin/lminspect" --dsl-signatures | grep "method Flow.respond" >/dev/null
+"${ROOT_DIR}/bin/lminspect" --lmcode-signatures | grep "fn rest_cli(StrList) -> string" >/dev/null
 "${ROOT_DIR}/bin/lminspect" --dsl-schema | grep '"name": "lminspect"' >/dev/null
+"${ROOT_DIR}/bin/lminspect" --lmcode-schema --json | grep '"name": "lminspect"' >/dev/null
 echo "CLI flag tests passed."
 
 echo "=== 4. Compiling Ported Mitmproxy Examples (lmscript -> dslb) ==="
@@ -39,6 +41,41 @@ for ex in "${EXAMPLES[@]}"; do
     "${ROOT_DIR}/bin/lminspect" --dsl "build/${ex}.dslb"
 done
 echo "All 8 Mitmproxy examples compiled and verified."
+
+echo "=== 4b. Testing Standard lmcode REST & CLI Interfaces ==="
+cat > "${ROOT_DIR}/build/std-rest-cli.lms" <<'EOF'
+p = _lmcode_ cli="lminspect";
+
+@"--host"
+fn opt_host(x: RestExchange) -> void implements CliOption {
+    x.set("host", x.query("host"));
+}
+
+@"flow"
+fn cmd_flow(x: RestExchange) -> void implements CliCommand {
+    let f = inspect.new_flow("GET", "https://" + x.get("host") + "/v1/ping");
+    x.send(f.request().method() + ":" + f.request().host() + f.request().path());
+}
+
+@"/flow/:seg"
+fn get_flow(x: RestExchange) -> void implements RestGet {
+    let f = inspect.new_flow("POST", "https://api.internal/" + x.param("seg"));
+    f.respond(201, "{\"seg\":\"" + x.param("seg") + "\"}", "application/json");
+    x.json("{\"status\":" + str(f.response().status_code()) + ",\"path\":\"" + f.request().path() + "\"}");
+}
+
+rest_config("session", "global");
+assert(rest_cli(str_split("--host=gateway.internal flow", " ")) == "GET:gateway.internal/v1/ping", "cli command mismatch");
+assert(rest_cli(str_split("/flow/orders", " ")) == "{\"status\":201,\"path\":\"/orders\"}", "rest get mismatch");
+println("PASS: std-rest-cli verified");
+
+end _lmcode_
+r = run_lmcode(p, {command: ["lminspect", "--lmcode", "$DSLFILE", "--save", ARGV[0]]});
+require(r.ok, "lminspect std-rest-cli failed");
+EOF
+lmscript "${ROOT_DIR}/build/std-rest-cli.lms" "${ROOT_DIR}/build/std-rest-cli.dslb"
+"${ROOT_DIR}/bin/lminspect" --lmcode "${ROOT_DIR}/build/std-rest-cli.dslb" | grep '{"ok": true, "result": null}' >/dev/null
+echo "Standard lmcode REST & CLI interfaces verified."
 
 echo "=== 5. Testing Certgen Command ==="
 CA_CERT="${ROOT_DIR}/build/ca.crt"

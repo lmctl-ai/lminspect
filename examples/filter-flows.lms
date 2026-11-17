@@ -5,7 +5,7 @@
 #   lmscript examples/filter-flows.lms build/filter-flows.dslb
 #   lminspect run --port 8080 --script build/filter-flows.dslb
 
-p = _dsl_ cli="lminspect";
+p = _lmcode_ cli="lminspect";
 
 # Standalone flow inspection & assertion
 let f_blocked = inspect.new_flow("GET", "https://telemetry.analytics.internal/collect");
@@ -30,5 +30,6 @@ fn on_request(f: Flow) -> void implements RequestHook {
     }
 }
 
-end _dsl_
-savedsl(p, ARGV[0]);
+end _lmcode_
+r = run_lmcode(p, {command: ["lminspect", "--lmcode", "$DSLFILE", "--save", ARGV[0]]});
+require(r.ok, "lminspect host failed");

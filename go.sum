@@ -2,5 +2,7 @@ github.com/andybalholm/brotli v1.3.0 h1:IdkhjSe/+34U+fP7FSR2Q6Poj1hnHUa2GoWmzXJd
 github.com/andybalholm/brotli v1.3.0/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/klauspost/compress v1.20.4 h1:dD0v/bvxtjCBqQu6sx1TNWkalEY5lNTIe+HY9w8TeNI=
 github.com/klauspost/compress v1.20.4/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
-github.com/lmctl-ai/lmcode-go v0.6.38 h1:q/F+Z45tiuIgJpUuotS0zMLg+4lQjmui7N2+PKroF6Q=
-github.com/lmctl-ai/lmcode-go v0.6.38/go.mod h1:Wfm1dj/9Uek4C4Y6LOkL5kFNRojgFUej7DDRGStSfVc=
+github.com/lmctl-ai/lmcode-go v0.6.39-0.20261117023936-2027887521b3 h1:P7/qfbEJB52p08KJyRLhQRXZjfN60BFZY/kcVpX7UYo=
+github.com/lmctl-ai/lmcode-go v0.6.39-0.20261117023936-2027887521b3/go.mod h1:Wfm1dj/9Uek4C4Y6LOkL5kFNRojgFUej7DDRGStSfVc=
+github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=
+github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3iGxZ18UQApw/E=

@@ -186,9 +186,91 @@ savedsl(p, "` + filepath.ToSlash(filepath.Join(tempDir, "hooks.dslb")) + `");
 	}
 }
 
-// Invoke the private package's JS entry directly, including on Windows where
-// exec.Command cannot execute an npm .cmd shim as a native process.
+func TestDslStdRestAndCliInterfaces(t *testing.T) {
+	host := NewHost()
+	if got := len(host.Registry.StdSignatures()); got != 226 {
+		t.Fatalf("std signatures = %d, want 226", got)
+	}
+
+	tempDir := t.TempDir()
+	schemaFile := filepath.Join(tempDir, "lminspect.dsl.json")
+	schemaBytes, err := os.ReadFile("../../schema/lminspect.dsl.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(schemaFile, schemaBytes, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	dslbFile := filepath.Join(tempDir, "rest-cli.dslb")
+	lmsFile := filepath.Join(tempDir, "rest-cli.lms")
+	lmsSource := `
+p = _lmcode_ schema="` + filepath.ToSlash(schemaFile) + `";
+
+@"--host"
+fn opt_host(x: RestExchange) -> void implements CliOption {
+	x.set("host", x.query("host"));
+}
+
+@"flow"
+fn cmd_flow(x: RestExchange) -> void implements CliCommand {
+	let f = inspect.new_flow("GET", "https://" + x.get("host") + "/v1/ping");
+	x.send(f.request().method() + ":" + f.request().host() + f.request().path());
+}
+
+@"/flow/:seg"
+fn get_flow(x: RestExchange) -> void implements RestGet {
+	let f = inspect.new_flow("POST", "https://api.internal/" + x.param("seg"));
+	f.respond(201, "{\"seg\":\"" + x.param("seg") + "\"}", "application/json");
+	x.json("{\"status\":" + str(f.response().status_code()) + ",\"path\":\"" + f.request().path() + "\"}");
+}
+
+rest_config("session", "global");
+assert(rest_cli(str_split("--host=gateway.internal flow", " ")) == "GET:gateway.internal/v1/ping", "cli command mismatch");
+assert(rest_cli(str_split("/flow/orders", " ")) == "{\"status\":201,\"path\":\"/orders\"}", "rest get mismatch");
+
+end _lmcode_
+savedsl(p, "` + filepath.ToSlash(dslbFile) + `");
+`
+	if err := os.WriteFile(lmsFile, []byte(lmsSource), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	absBin, err := filepath.Abs("../../bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := compilerCommand(lmsFile, dslbFile)
+	cmd.Env = append(os.Environ(), "PATH="+absBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("lmscript compile error: %v, out: %s", err, string(out))
+	}
+
+	bytecode, err := os.ReadFile(dslbFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prog, err := lmcode.Load(bytecode, schemaBytes, host.Registry)
+	if err != nil {
+		t.Fatalf("lmcode.Load failed: %v", err)
+	}
+
+	ctx := lmcode.NewContext()
+	ctx.Set("inspect", host.Inspector)
+	if err := prog.Run(ctx, host.Registry); err != nil {
+		t.Fatalf("prog.Run failed: %v", err)
+	}
+}
+
+// Invoke the compiler-library fixture script directly with Node, including on
+// Windows where exec.Command cannot execute an npm .cmd shim as a native process.
 func compilerCommand(args ...string) *exec.Cmd {
+	script, err := filepath.Abs("../../scripts/compile-fixture.mjs")
+	if err == nil {
+		return exec.Command("node", append([]string{script}, args...)...)
+	}
 	if entry := os.Getenv("LMSCRIPT_COMPILER_JS"); entry != "" {
 		return exec.Command("node", append([]string{entry}, args...)...)
 	}

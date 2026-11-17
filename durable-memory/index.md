@@ -25,3 +25,8 @@ Welcome to the internal engineering documentation and architecture record for **
    - Full protocol analysis: OpenAI Responses streaming, Anthropic Messages, and Model catalog discovery.
    - Core engine enhancement: `RuleRoute` scheme rewriting for TLS offloading to local mock servers.
    - GitHub Actions CI implementation patterns.
+
+5. [Standard `lmcode` REST Endpoints & Stateless CLI Interfaces](file:///home/ubuntu/repos/lmctl-ai/lminspect/durable-memory/05-std-rest-and-cli-interfaces.md)
+   - Upgrade to `lmcode-go` `2027887` (`lmcode_std_v3`, 226 standard signatures) and `@lmctl-ai/lmctl@0.2.482`.
+   - Support for `RestGet`..`RestOptions`, `RestHandler`, `CliCommand`, `CliOption`, `rest_config`, `rest_route`, `rest_serve`, and `rest_cli`.
+   - Verification in `pkg/dsl/host_test.go` (`TestDslStdRestAndCliInterfaces`) and `test.sh`.

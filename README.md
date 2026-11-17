@@ -118,7 +118,7 @@ lminspect replay --client flows.jsonl --target 127.0.0.1:9000
 ### Example Addon (`add-header.lms`)
 
 ```lmcode
-p = _dsl_ cli="lminspect";
+p = _lmcode_ cli="lminspect";
 
 # Request hook: executes before forwarding upstream
 @request
@@ -132,8 +132,9 @@ fn on_response(f: Flow) -> void implements ResponseHook {
     f.response().set_header("X-Powered-By", "lminspect");
 }
 
-end _dsl_
-savedsl(p, ARGV[0]);
+end _lmcode_
+r = run_lmcode(p, {command: ["lminspect", "--lmcode", "$DSLFILE", "--save", ARGV[0]]});
+require(r.ok, "lminspect host failed");
 ```
 
 ### Compiling and Running an Addon
@@ -144,6 +145,37 @@ lmscript examples/add-header.lms build/add-header.dslb
 
 # 2. Run proxy with compiled addon
 lminspect run --port 8080 --script build/add-header.dslb
+```
+
+### Standard `lmcode` REST Endpoints & Stateless CLI Interfaces
+
+`lminspect` includes the 226-signature `lmcode_std_v3` standard library, allowing scripts to define standard REST endpoints (`RestGet`, `RestPost`, `RestPut`, `RestDelete`, `RestPatch`, `RestHead`, `RestOptions`, `RestHandler`) and stateless CLI commands/options (`CliCommand`, `CliOption`) alongside `Inspector`/`Flow` objects and dispatch them via `rest_cli(...)` or `rest_serve()`:
+
+```lmcode
+p = _lmcode_ cli="lminspect";
+
+@"--host"
+fn opt_host(x: RestExchange) -> void implements CliOption {
+    x.set("host", x.query("host"));
+}
+
+@"flow"
+fn cmd_flow(x: RestExchange) -> void implements CliCommand {
+    let f = inspect.new_flow("GET", "https://" + x.get("host") + "/v1/ping");
+    x.send(f.request().method() + ":" + f.request().host() + f.request().path());
+}
+
+@"/flow/:seg"
+fn get_flow(x: RestExchange) -> void implements RestGet {
+    let f = inspect.new_flow("POST", "https://api.internal/" + x.param("seg"));
+    f.respond(201, "{\"seg\":\"" + x.param("seg") + "\"}", "application/json");
+    x.json("{\"status\":" + str(f.response().status_code()) + ",\"path\":\"" + f.request().path() + "\"}");
+}
+
+rest_config("session", "global");
+println(rest_cli(str_split("--host=gateway.internal flow", " ")));
+println(rest_cli(str_split("/flow/orders", " ")));
+end _lmcode_
 ```
 
 ---
@@ -258,7 +290,7 @@ files use owner-only permissions on POSIX. Older captures are not retroactively
 cleaned: do not upload recordings produced by an unsafe older recorder.
 
 Set `LMSCRIPT_COMPILER_JS` to the `bin/lmscript` entry of a privately installed
-`@lmctl-ai/lmctl@0.2.448` package (the tests invoke Node directly, including on
+`@lmctl-ai/lmctl@0.2.482` package (the tests invoke Node directly, including on
 Windows). Run `go test ./...`, and
 `python scripts/test-sanitize-mutation.py` to prove removal of the output boundary
 turns the capture and printing tests red. CI uses a private pinned compiler and

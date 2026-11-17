@@ -5,7 +5,7 @@
 #   lmscript examples/replay-flow.lms build/replay-flow.dslb
 #   lminspect run --port 8080 --script build/replay-flow.dslb
 
-p = _dsl_ cli="lminspect";
+p = _lmcode_ cli="lminspect";
 
 # Standalone flow inspection & assertion:
 # 1. Create original flow and serialize to JSON
@@ -39,5 +39,6 @@ fn on_request(f: Flow) -> void implements RequestHook {
     }
 }
 
-end _dsl_
-savedsl(p, ARGV[0]);
+end _lmcode_
+r = run_lmcode(p, {command: ["lminspect", "--lmcode", "$DSLFILE", "--save", ARGV[0]]});
+require(r.ok, "lminspect host failed");

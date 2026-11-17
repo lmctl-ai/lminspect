@@ -86,7 +86,7 @@ jobs:
       - name: install lmscript compiler
         if: env.ONLY_OK == 'true'
         run: |
-          npm install --prefix "$RUNNER_TEMP/lminspect-compiler" --ignore-scripts --no-audit --no-fund @lmctl-ai/lmctl@0.2.448
+          npm install --prefix "$RUNNER_TEMP/lminspect-compiler" --ignore-scripts --no-audit --no-fund @lmctl-ai/lmctl@0.2.482
           node - <<'JS'
           const fs = require('node:fs'), path = require('node:path');
           const root = path.join(process.env.RUNNER_TEMP, 'lminspect-compiler');

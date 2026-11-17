@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -23,6 +24,7 @@ var embeddedSchema []byte
 var version = "0.1.0"
 
 const usage = `usage: lminspect --version | --dsl-schema [--json] | --dsl-signatures | --dsl FILE.dslb [FILE...]
+       lminspect --lmcode-schema [--json] | --lmcode-signatures | --lmcode FILE.dslb [FILE...] [--save OUT.dslb]
        lminspect run [--listen ADDR] [--mode MODE] [--ssl-bump] [--tap] [--record FILE] [--script FILE.dslb]
        lminspect replay --client FILE.jsonl [--target URL]
        lminspect certgen [--cert FILE] [--key FILE]`
@@ -43,12 +45,12 @@ func main() {
 		fmt.Printf("lminspect %s\n", version)
 		os.Exit(0)
 
-	case "--dsl-schema":
+	case "--dsl-schema", "--lmcode-schema":
 		// Byte-identical schema print
 		_, _ = os.Stdout.Write(embeddedSchema)
 		os.Exit(0)
 
-	case "--dsl-signatures":
+	case "--dsl-signatures", "--lmcode-signatures":
 		host := dsl.NewHost()
 		sigs := host.Registry.Signatures()
 		for _, s := range sigs {
@@ -56,18 +58,12 @@ func main() {
 		}
 		os.Exit(0)
 
-	case "--dsl":
+	case "--dsl", "--lmcode":
 		if len(os.Args) < 3 {
-			safeErrorln("missing bytecode file for --dsl")
+			safeErrorln("missing bytecode file for " + cmd)
 			os.Exit(2)
 		}
-		for _, file := range os.Args[2:] {
-			code := runBytecode(file)
-			if code != 0 {
-				os.Exit(code)
-			}
-		}
-		os.Exit(0)
+		os.Exit(runBytecodeArgs(os.Args[2:]))
 
 	case "run", "proxy":
 		runProxy(os.Args[2:])
@@ -87,6 +83,98 @@ func main() {
 		safeErrorf("unknown command: %s\n%s\n", cmd, usage)
 		os.Exit(2)
 	}
+}
+
+func runBytecodeArgs(args []string) int {
+	var files []string
+	var savePath string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--save" {
+			i++
+			if i >= len(args) {
+				safeErrorln("missing path for --save")
+				return 2
+			}
+			savePath = args[i]
+			continue
+		}
+		files = append(files, args[i])
+	}
+	if len(files) == 0 {
+		safeErrorln("missing bytecode file")
+		return 2
+	}
+	if os.Getenv("LMCODE_INVOCATION_FILE") != "" {
+		results, err := lmcode.InvocationResultsFromCommand(files)
+		if err != nil {
+			return lmcode.FailureFrame(os.Stdout, "cli", err)
+		}
+		host := dsl.NewHost()
+		contract, err := lmcode.ResultContractFromSchema(embeddedSchema)
+		if err != nil {
+			return lmcode.FailureFrame(os.Stdout, "app", lmcode.NewHostError("invalid_schema"))
+		}
+		slots := results.Registrations()
+		programs := make([]*lmcode.Program, len(slots))
+		for _, slot := range slots {
+			index := slot.Index
+			raw, e := os.ReadFile(slot.File)
+			if e != nil {
+				_ = results.Fail(&index, "cli", lmcode.NewError(lmcode.CLI_USAGE, "program_unreadable"))
+				return results.WriteFrame(os.Stdout)
+			}
+			if savePath != "" && !results.Dry() {
+				if mkErr := os.MkdirAll(filepath.Dir(savePath), 0755); mkErr != nil {
+					_ = results.Fail(&index, "cli", lmcode.NewError(lmcode.CLI_USAGE, "cannot_save_bytecode"))
+					return results.WriteFrame(os.Stdout)
+				}
+				if wErr := os.WriteFile(savePath, raw, 0644); wErr != nil {
+					_ = results.Fail(&index, "cli", lmcode.NewError(lmcode.CLI_USAGE, "cannot_save_bytecode"))
+					return results.WriteFrame(os.Stdout)
+				}
+			}
+			p, e := lmcode.Load(raw, embeddedSchema, host.Registry)
+			if e != nil {
+				_ = results.Fail(&index, "load", e)
+				return results.WriteFrame(os.Stdout)
+			}
+			programs[index] = p
+		}
+		for i, p := range programs {
+			if _, err = results.Select(i, host.Registry, contract); err != nil {
+				_ = results.Fail(&i, "app", err)
+				break
+			}
+			ctx := lmcode.NewContext()
+			ctx.SetDry(results.Dry())
+			ctx.Set("inspect", host.Inspector)
+			if err = p.Run(ctx, host.Registry); err != nil {
+				phase := "run"
+				if e, ok := err.(*lmcode.Error); ok && e.Code == lmcode.RUN_HOST {
+					phase = "app"
+				}
+				_ = results.Fail(&i, phase, err)
+				break
+			}
+			if err = results.Complete(i); err != nil {
+				_ = results.Fail(&i, "app", err)
+				break
+			}
+		}
+		return results.WriteFrame(os.Stdout)
+	}
+	for _, file := range files {
+		if savePath != "" {
+			if raw, err := os.ReadFile(file); err == nil {
+				_ = os.MkdirAll(filepath.Dir(savePath), 0755)
+				_ = os.WriteFile(savePath, raw, 0644)
+			}
+		}
+		if code := runBytecode(file); code != 0 {
+			return code
+		}
+	}
+	return 0
 }
 
 func runBytecode(filePath string) int {

@@ -5,7 +5,7 @@
 #   lmscript examples/modify-response-body.lms build/modify-response-body.dslb
 #   lminspect run --port 8080 --script build/modify-response-body.dslb
 
-p = _dsl_ cli="lminspect";
+p = _lmcode_ cli="lminspect";
 
 # Standalone flow inspection & assertion
 let f = inspect.new_flow("GET", "https://news.example.com/headlines");
@@ -27,5 +27,6 @@ fn on_response(f: Flow) -> void implements ResponseHook {
     }
 }
 
-end _dsl_
-savedsl(p, ARGV[0]);
+end _lmcode_
+r = run_lmcode(p, {command: ["lminspect", "--lmcode", "$DSLFILE", "--save", ARGV[0]]});
+require(r.ok, "lminspect host failed");
