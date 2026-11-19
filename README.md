@@ -6,6 +6,8 @@
 
 **lminspect** is a high-performance, single-binary HTTP/HTTPS proxy and traffic manipulation engine written in pure Go, ported from the core capabilities of **mitmproxy** and supercharged with **lmcode** DSL programmability.
 
+**Documentation:** [Quick reference](https://www.lmctl.com/tools/lminspect/) · [LLM skill](https://www.lmctl.com/tools/lminspect/skill.html) · [Guide](https://www.lmctl.com/tools/lminspect/guide.html) · [Reference](https://www.lmctl.com/tools/lminspect/reference.html)
+
 Designed specifically for automated testing, API reverse engineering, microservice mocking, and security analysis, `lminspect` eliminates Python runtime overhead while providing a statically compiled proxy with live scriptable interception hooks.
 
 ---
